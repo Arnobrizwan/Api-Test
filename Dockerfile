@@ -1,5 +1,8 @@
 FROM python:3.11-slim
 
+# Suppress debconf warnings in non-interactive environment
+ENV DEBIAN_FRONTEND=noninteractive
+
 # Install system dependencies including Tesseract
 RUN apt-get update && apt-get install -y \
     tesseract-ocr \
