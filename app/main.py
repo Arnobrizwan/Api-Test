@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 from typing import Callable
 
 from fastapi import FastAPI, Request, Response
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -176,6 +177,52 @@ app.add_middleware(
 
 
 # Global exception handlers
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    """Handle FastAPI request validation errors (e.g., missing files).
+
+    Converts FastAPI's default validation error format to our standardized
+    error response format for consistency.
+
+    Args:
+        request: Incoming request
+        exc: RequestValidationError from FastAPI/Pydantic
+
+    Returns:
+        JSON error response in standard format
+    """
+    # Check if it's a missing file error
+    errors = exc.errors()
+    missing_file = any(
+        error.get("type") == "missing" and "image" in str(error.get("loc", []))
+        for error in errors
+    )
+
+    if missing_file:
+        logger.warning("Validation failed: No file uploaded")
+        return JSONResponse(
+            status_code=422,
+            content=ErrorResponse(
+                success=False,
+                error="No file uploaded. Please provide an image file.",
+                error_code=ErrorCodes.MISSING_FILE.value,
+            ).model_dump(),
+        )
+
+    # Generic validation error
+    error_msg = "; ".join([f"{'.'.join(str(x) for x in e.get('loc', []))}: {e.get('msg', '')}" for e in errors])
+    logger.warning(f"Validation error: {error_msg}")
+
+    return JSONResponse(
+        status_code=422,
+        content=ErrorResponse(
+            success=False,
+            error=f"Validation error: {error_msg}",
+            error_code=ErrorCodes.INVALID_PARAMETERS.value,
+        ).model_dump(),
+    )
+
+
 @app.exception_handler(OCRAPIException)
 async def ocr_api_exception_handler(request: Request, exc: OCRAPIException) -> JSONResponse:
     """Handle OCR API specific exceptions.
