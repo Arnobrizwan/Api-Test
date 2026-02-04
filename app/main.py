@@ -107,7 +107,7 @@ async def rate_limit_handler(request: Request, exc: Exception) -> JSONResponse:
         content={
             "success": False,
             "error": "Rate limit exceeded. Please try again later.",
-            "error_code": "RATE_LIMIT_EXCEEDED",
+            "error_code": ErrorCodes.RATE_LIMIT_EXCEEDED.value,
         },
     )
 
