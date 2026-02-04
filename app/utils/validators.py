@@ -4,6 +4,7 @@ This module provides comprehensive image validation including
 file type, size, integrity, and security checks.
 """
 
+import asyncio
 import io
 from typing import Tuple, List
 
@@ -11,7 +12,12 @@ from PIL import Image
 from fastapi import UploadFile
 
 from ..core.config import settings
-from ..core.constants import ALLOWED_EXTENSIONS, ALLOWED_MIME_TYPES, ErrorCodes
+from ..core.constants import (
+    ALLOWED_EXTENSIONS,
+    ALLOWED_MIME_TYPES,
+    ErrorCodes,
+    MIN_IMAGE_SIZE_BYTES,
+)
 from ..core.exceptions import FileValidationError
 from ..core.security import (
     validate_image_magic_bytes,
@@ -93,8 +99,16 @@ async def validate_image_file(file: UploadFile) -> Tuple[bytes, Image.Image]:
                 filename=safe_filename
             )
 
-    # Read file content
-    content = await file.read()
+    # Read file content with timeout to prevent Slowloris attacks
+    try:
+        content = await asyncio.wait_for(file.read(), timeout=30.0)
+    except asyncio.TimeoutError:
+        logger.warning(f"Validation failed: File read timeout for '{safe_filename}'")
+        raise FileValidationError(
+            message="File upload timed out. Please try again.",
+            error_code=ErrorCodes.INVALID_IMAGE,
+            filename=safe_filename
+        )
 
     # Validate file size
     if len(content) > settings.max_file_size:
@@ -110,6 +124,15 @@ async def validate_image_file(file: UploadFile) -> Tuple[bytes, Image.Image]:
         logger.warning("Validation failed: Empty file")
         raise FileValidationError(
             message="Empty file uploaded",
+            error_code=ErrorCodes.INVALID_IMAGE,
+            filename=safe_filename
+        )
+
+    # Check minimum file size (files too small cannot be valid images)
+    if len(content) < MIN_IMAGE_SIZE_BYTES:
+        logger.warning(f"Validation failed: File too small ({len(content)} bytes)")
+        raise FileValidationError(
+            message=f"File too small to be a valid image. Minimum size is {MIN_IMAGE_SIZE_BYTES} bytes.",
             error_code=ErrorCodes.INVALID_IMAGE,
             filename=safe_filename
         )
@@ -134,11 +157,21 @@ async def validate_image_file(file: UploadFile) -> Tuple[bytes, Image.Image]:
         )
 
     # Validate image integrity with PIL
+    # Using context managers to prevent memory leaks
     try:
-        image = Image.open(io.BytesIO(content))
-        image.verify()
-        # Re-open after verify (verify() can only be called once)
-        image = Image.open(io.BytesIO(content))
+        # First pass: verify image integrity
+        verify_buffer = io.BytesIO(content)
+        try:
+            with Image.open(verify_buffer) as verify_image:
+                verify_image.verify()
+        finally:
+            verify_buffer.close()
+
+        # Second pass: open for actual use (verify() invalidates the image)
+        image_buffer = io.BytesIO(content)
+        image = Image.open(image_buffer)
+        # Load image data into memory so we can close the buffer
+        image.load()
     except Exception as e:
         logger.warning(f"Validation failed: Image integrity check failed - {e}")
         raise FileValidationError(
@@ -180,11 +213,24 @@ async def validate_multiple_images(files: List[UploadFile]) -> List[Tuple[bytes,
             error_code=ErrorCodes.TOO_MANY_FILES
         )
 
+    # Track total batch size to prevent memory exhaustion
+    total_batch_bytes = 0
+    max_total_batch_size = settings.max_file_size * settings.max_batch_size  # e.g., 10MB * 10 = 100MB
+
     results = []
     for idx, file in enumerate(files):
         try:
             content, image = await validate_image_file(file)
             safe_filename = sanitize_filename(file.filename) if file.filename else f"file_{idx}"
+
+            # Check total batch size
+            total_batch_bytes += len(content)
+            if total_batch_bytes > max_total_batch_size:
+                raise FileValidationError(
+                    message=f"Total batch size exceeds limit. Maximum total size is {max_total_batch_size // (1024 * 1024)}MB.",
+                    error_code=ErrorCodes.FILE_TOO_LARGE
+                )
+
             results.append((content, image, safe_filename))
         except FileValidationError as e:
             # Re-raise with file index for better error messages

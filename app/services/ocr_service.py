@@ -5,7 +5,10 @@ Google Cloud Vision API and Tesseract OCR engines, with support for
 caching, batch processing, and comprehensive result formatting.
 """
 
+import atexit
+import asyncio
 import time
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError, as_completed
 from typing import Tuple, Optional, List
 
 from PIL import Image
@@ -13,7 +16,7 @@ from PIL import Image
 from .vision_api import vision_service
 from .tesseract import tesseract_service
 from ..core.config import settings
-from ..core.constants import OCREngine, ErrorCodes
+from ..core.constants import OCREngine, ErrorCodes, MAX_OCR_WORKERS
 from ..core.exceptions import OCRProcessingError
 from ..core.logging import get_logger
 from ..models.responses import (
@@ -61,12 +64,31 @@ class OCRService:
         """Initialize OCR service with configuration."""
         self.use_tesseract_only = settings.use_tesseract_only
         self.enable_cache = settings.enable_cache
+        self.ocr_timeout = settings.ocr_timeout
+        self.vision_api_timeout = settings.vision_api_timeout
+        self.tesseract_timeout = settings.tesseract_timeout
+        # Thread pool for running blocking OCR operations
+        self._executor = ThreadPoolExecutor(
+            max_workers=MAX_OCR_WORKERS,
+            thread_name_prefix="ocr_worker"
+        )
+        # Register cleanup on process exit
+        atexit.register(self.shutdown)
 
         logger.info(
             f"OCR Service initialized: "
             f"tesseract_only={self.use_tesseract_only}, "
-            f"cache_enabled={self.enable_cache}"
+            f"cache_enabled={self.enable_cache}, "
+            f"ocr_timeout={self.ocr_timeout}s, "
+            f"max_workers={MAX_OCR_WORKERS}"
         )
+
+    def shutdown(self):
+        """Shutdown the thread pool executor gracefully."""
+        if self._executor:
+            logger.info("Shutting down OCR service thread pool...")
+            self._executor.shutdown(wait=True, cancel_futures=True)
+            logger.info("OCR service thread pool shutdown complete")
 
     def _perform_ocr(
         self,
@@ -96,13 +118,24 @@ class OCRService:
         # Try Cloud Vision API first
         if not self.use_tesseract_only and vision_service.is_available:
             try:
-                logger.debug("Attempting OCR with Google Cloud Vision API")
-                text, confidence = vision_service.extract_text(image_content)
+                logger.debug(f"Attempting OCR with Google Cloud Vision API (timeout={self.vision_api_timeout}s)")
+                future = self._executor.submit(vision_service.extract_text, image_content)
+                text, confidence = future.result(timeout=self.vision_api_timeout)
                 engine_used = OCREngine.CLOUD_VISION
                 logger.info(
                     f"Vision API extraction successful: "
                     f"text_length={len(text or '')}, confidence={confidence:.4f}"
                 )
+            except FuturesTimeoutError:
+                # Note: The thread continues running in background but we stop waiting.
+                # This is a limitation of thread pools - threads cannot be forcefully killed.
+                error_msg = f"Vision API: Timeout after {self.vision_api_timeout}s"
+                errors.append(error_msg)
+                logger.warning(f"Vision API timed out after {self.vision_api_timeout}s (thread may still be running)")
+            except (OSError, IOError) as e:
+                error_msg = f"Vision API I/O error: {str(e)}"
+                errors.append(error_msg)
+                logger.warning(f"Vision API I/O failed: {e}")
             except Exception as e:
                 error_msg = f"Vision API: {str(e)}"
                 errors.append(error_msg)
@@ -111,13 +144,22 @@ class OCRService:
         # Fall back to Tesseract if needed
         if text is None and tesseract_service.is_available:
             try:
-                logger.debug("Attempting OCR with Tesseract")
-                text, confidence = tesseract_service.extract_text(image)
+                logger.debug(f"Attempting OCR with Tesseract (timeout={self.tesseract_timeout}s)")
+                future = self._executor.submit(tesseract_service.extract_text, image)
+                text, confidence = future.result(timeout=self.tesseract_timeout)
                 engine_used = OCREngine.TESSERACT
                 logger.info(
                     f"Tesseract extraction successful: "
                     f"text_length={len(text or '')}, confidence={confidence:.4f}"
                 )
+            except FuturesTimeoutError:
+                error_msg = f"Tesseract: Timeout after {self.tesseract_timeout}s"
+                errors.append(error_msg)
+                logger.warning(f"Tesseract timed out after {self.tesseract_timeout}s (thread may still be running)")
+            except (OSError, IOError) as e:
+                error_msg = f"Tesseract I/O error: {str(e)}"
+                errors.append(error_msg)
+                logger.warning(f"Tesseract I/O failed: {e}")
             except Exception as e:
                 error_msg = f"Tesseract: {str(e)}"
                 errors.append(error_msg)
@@ -313,16 +355,87 @@ class OCRService:
 
         return OCRResponse(**result)
 
+    async def extract_text_async(
+        self,
+        image_content: bytes,
+        image: Image.Image,
+        include_metadata: bool = True,
+        include_entities: bool = True,
+        cache_key: Optional[str] = None,
+    ) -> OCRResponse:
+        """Async version of extract_text that doesn't block the event loop.
+
+        Runs the synchronous OCR processing in a thread pool to avoid
+        blocking the async event loop.
+
+        Args:
+            image_content: Raw image bytes
+            image: PIL Image object
+            include_metadata: Include image metadata in response
+            include_entities: Extract entities from text
+            cache_key: Optional cache key for result caching
+
+        Returns:
+            OCRResponse with extracted text and all metadata
+        """
+        return await asyncio.to_thread(
+            self.extract_text,
+            image_content,
+            image,
+            include_metadata,
+            include_entities,
+            cache_key,
+        )
+
+    def _process_single_batch_item(
+        self,
+        idx: int,
+        image_content: bytes,
+        pil_image: Image.Image,
+        filename: str,
+        cache_key: Optional[str],
+        include_metadata: bool,
+        include_entities: bool,
+    ) -> Tuple[int, BatchItemResponse]:
+        """Process a single image in batch. Returns (index, result) for ordering."""
+        item_start = time.perf_counter()
+        try:
+            result = self.extract_text(
+                image_content,
+                pil_image,
+                include_metadata=include_metadata,
+                include_entities=include_entities,
+                cache_key=cache_key,
+            )
+            return idx, BatchItemResponse(
+                filename=filename,
+                success=True,
+                text=result.text,
+                text_formatted=result.text_formatted,
+                confidence=result.confidence,
+                ocr_engine=result.ocr_engine,
+                cached=result.cached,
+                processing_time_ms=int((time.perf_counter() - item_start) * 1000),
+            )
+        except Exception as e:
+            return idx, BatchItemResponse(
+                filename=filename,
+                success=False,
+                error=str(e),
+                error_code=ErrorCodes.OCR_FAILED.value,
+                processing_time_ms=int((time.perf_counter() - item_start) * 1000),
+            )
+
     def extract_text_batch(
         self,
         images: List[Tuple[bytes, Image.Image, str, Optional[str]]],
         include_metadata: bool = False,
         include_entities: bool = False,
     ) -> BatchOCRResponse:
-        """Extract text from multiple images in batch.
+        """Extract text from multiple images in batch using parallel processing.
 
-        Processes multiple images sequentially, collecting results
-        and handling individual failures gracefully.
+        Processes multiple images concurrently for better performance,
+        collecting results and handling individual failures gracefully.
 
         Args:
             images: List of (content, pil_image, filename, cache_key) tuples
@@ -333,58 +446,67 @@ class OCRService:
             BatchOCRResponse with individual results and summary statistics
         """
         start_time = time.perf_counter()
-        results: List[BatchItemResponse] = []
+        logger.info(f"Starting parallel batch OCR processing for {len(images)} images")
+
+        # Submit all tasks to thread pool for parallel processing
+        futures = {}
+        for idx, (image_content, pil_image, filename, cache_key) in enumerate(images):
+            future = self._executor.submit(
+                self._process_single_batch_item,
+                idx, image_content, pil_image, filename, cache_key,
+                include_metadata, include_entities
+            )
+            futures[future] = idx
+
+        # Collect results as they complete
+        results_dict = {}
         successful = 0
         failed = 0
 
-        logger.info(f"Starting batch OCR processing for {len(images)} images")
-
-        for idx, (image_content, pil_image, filename, cache_key) in enumerate(images):
-            item_start = time.perf_counter()
-
+        for future in as_completed(futures):
             try:
-                result = self.extract_text(
-                    image_content,
-                    pil_image,
-                    include_metadata=include_metadata,
-                    include_entities=include_entities,
-                    cache_key=cache_key,
-                )
-                results.append(
-                    BatchItemResponse(
-                        filename=filename,
-                        success=True,
-                        text=result.text,
-                        text_formatted=result.text_formatted,
-                        confidence=result.confidence,
-                        ocr_engine=result.ocr_engine,
-                        cached=result.cached,
-                        processing_time_ms=int((time.perf_counter() - item_start) * 1000),
-                    )
-                )
-                successful += 1
-                logger.debug(f"Batch item {idx + 1}/{len(images)} processed: {filename}")
-
-            except Exception as e:
-                error_msg = str(e)
-                results.append(
-                    BatchItemResponse(
-                        filename=filename,
-                        success=False,
-                        error=error_msg,
-                        error_code=ErrorCodes.OCR_FAILED.value,
-                        processing_time_ms=int((time.perf_counter() - item_start) * 1000),
-                    )
+                idx, batch_result = future.result(timeout=self.ocr_timeout)
+                results_dict[idx] = batch_result
+                if batch_result.success:
+                    successful += 1
+                    logger.debug(f"Batch item {idx + 1}/{len(images)} completed: {batch_result.filename}")
+                else:
+                    failed += 1
+                    logger.warning(f"Batch item {idx + 1}/{len(images)} failed: {batch_result.filename}")
+            except FuturesTimeoutError:
+                idx = futures[future]
+                filename = images[idx][2]
+                results_dict[idx] = BatchItemResponse(
+                    filename=filename,
+                    success=False,
+                    error=f"Timeout after {self.ocr_timeout}s",
+                    error_code=ErrorCodes.OCR_FAILED.value,
+                    processing_time_ms=self.ocr_timeout * 1000,
                 )
                 failed += 1
-                logger.warning(f"Batch item {idx + 1}/{len(images)} failed: {filename} - {error_msg}")
+                logger.warning(f"Batch item {idx + 1}/{len(images)} timed out: {filename}")
+            except Exception as e:
+                idx = futures[future]
+                filename = images[idx][2]
+                results_dict[idx] = BatchItemResponse(
+                    filename=filename,
+                    success=False,
+                    error=str(e),
+                    error_code=ErrorCodes.OCR_FAILED.value,
+                    processing_time_ms=0,
+                )
+                failed += 1
+                logger.warning(f"Batch item {idx + 1}/{len(images)} error: {filename} - {e}")
+
+        # Sort results by original index to maintain order
+        results = [results_dict[i] for i in range(len(images))]
 
         total_time_ms = int((time.perf_counter() - start_time) * 1000)
 
         logger.info(
             f"Batch OCR completed: total={len(images)}, "
             f"successful={successful}, failed={failed}, "
-            f"time={total_time_ms}ms"
+            f"time={total_time_ms}ms (parallel)"
         )
 
         return BatchOCRResponse(
@@ -394,6 +516,31 @@ class OCRService:
             failed=failed,
             total_processing_time_ms=total_time_ms,
             results=results,
+        )
+
+    async def extract_text_batch_async(
+        self,
+        images: List[Tuple[bytes, Image.Image, str, Optional[str]]],
+        include_metadata: bool = False,
+        include_entities: bool = False,
+    ) -> BatchOCRResponse:
+        """Async version of extract_text_batch that doesn't block the event loop.
+
+        Runs the synchronous batch processing in a thread pool.
+
+        Args:
+            images: List of (content, pil_image, filename, cache_key) tuples
+            include_metadata: Include image metadata for each result
+            include_entities: Extract entities for each result
+
+        Returns:
+            BatchOCRResponse with individual results and summary statistics
+        """
+        return await asyncio.to_thread(
+            self.extract_text_batch,
+            images,
+            include_metadata,
+            include_entities,
         )
 
 

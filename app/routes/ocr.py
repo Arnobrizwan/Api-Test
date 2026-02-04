@@ -4,7 +4,7 @@ This module defines the API endpoints for OCR text extraction,
 batch processing, and cache management.
 """
 
-from typing import List
+from typing import List, Union
 
 from fastapi import APIRouter, File, UploadFile, Query, Request, Depends
 from fastapi.responses import JSONResponse
@@ -99,7 +99,7 @@ async def extract_text(
         default=True,
         description="Use caching for identical images (based on SHA256 hash)"
     ),
-) -> OCRResponse:
+) -> Union[OCRResponse, JSONResponse]:
     """Extract text from a single uploaded image.
 
     This endpoint accepts an image file and returns extracted text along with
@@ -133,27 +133,16 @@ async def extract_text(
     # Compute cache key if caching enabled
     cache_key = compute_image_hash(image_content) if use_cache else None
 
-    # Process image
+    # Process image using async method to avoid blocking event loop
     try:
-        result = ocr_service.extract_text(
+        result = await ocr_service.extract_text_async(
             image_content=image_content,
             image=pil_image,
             include_metadata=include_metadata,
             include_entities=include_entities,
             cache_key=cache_key,
         )
-
-        logger.info(
-            f"OCR extraction completed",
-            extra={
-                "engine": result.ocr_engine,
-                "text_length": len(result.text or ""),
-                "confidence": result.confidence,
-                "cached": result.cached,
-                "processing_time_ms": result.processing_time_ms,
-            }
-        )
-
+        # Note: Logging is done in ocr_service to avoid duplicate logs
         return result
 
     except OCRAPIException as e:
@@ -169,7 +158,11 @@ async def extract_text(
     response_model=BatchOCRResponse,
     responses={
         200: {
-            "description": "Batch processing completed",
+            "description": "Batch processing completed (all successful)",
+            "model": BatchOCRResponse,
+        },
+        207: {
+            "description": "Batch processing completed with mixed results (some failures)",
             "model": BatchOCRResponse,
         },
         400: {
@@ -218,7 +211,7 @@ async def extract_text_batch(
         default=True,
         description="Use caching for identical images"
     ),
-) -> BatchOCRResponse:
+) -> Union[BatchOCRResponse, JSONResponse]:
     """Extract text from multiple images in a single request.
 
     This endpoint processes multiple images and returns results for each,
@@ -255,23 +248,14 @@ async def extract_text_batch(
         cache_key = compute_image_hash(content) if use_cache else None
         batch_input.append((content, pil_image, filename, cache_key))
 
-    # Process batch
+    # Process batch using async method to avoid blocking event loop
     try:
-        result = ocr_service.extract_text_batch(
+        result = await ocr_service.extract_text_batch_async(
             images=batch_input,
             include_metadata=include_metadata,
             include_entities=include_entities,
         )
-
-        logger.info(
-            f"Batch OCR completed",
-            extra={
-                "total": result.total_files,
-                "successful": result.successful,
-                "failed": result.failed,
-                "processing_time_ms": result.total_processing_time_ms,
-            }
-        )
+        # Note: Logging is done in ocr_service to avoid duplicate logs
 
         # Return 207 Multi-Status if there are mixed results (some successes, some failures)
         if result.failed > 0 and result.successful > 0:
@@ -311,17 +295,37 @@ async def get_cache_stats() -> CacheStatsResponse:
 @router.delete(
     "/cache",
     summary="Clear Cache",
-    description="Clear all cached OCR results. Use with caution in production.",
+    description="""
+Clear all cached OCR results within the application namespace.
+
+**⚠️ Warning:** This operation cannot be undone. All cached results will be deleted
+and subsequent requests will need to re-process images.
+
+**Note:** Only clears keys belonging to this application's namespace, not the entire cache database.
+    """,
     tags=["Cache"],
+    responses={
+        200: {
+            "description": "Cache cleared successfully",
+            "content": {
+                "application/json": {
+                    "example": {"success": True, "message": "Cache cleared successfully"}
+                }
+            }
+        }
+    }
 )
 async def clear_cache():
     """Clear the OCR results cache.
 
+    This operation clears all cached OCR results. Use with caution in production
+    as it will cause all subsequent requests to re-process images.
+
     Returns:
-        Success message
+        Success message with confirmation
     """
     ocr_cache.clear()
-    logger.info("Cache cleared by API request")
+    logger.warning("Cache cleared by API request - all cached results deleted")
     return {
         "success": True,
         "message": "Cache cleared successfully"

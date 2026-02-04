@@ -1,7 +1,8 @@
 """Pydantic models for API responses."""
 
-from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional, List, Dict, Any
+
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class TextStats(BaseModel):
@@ -103,11 +104,23 @@ class ErrorResponse(BaseModel):
     error_code: str = Field(description="Machine-readable error code")
 
 
+class DependencyStatus(BaseModel):
+    """Status of a single dependency."""
+
+    available: bool = Field(description="Whether the dependency is available")
+    version: Optional[str] = Field(default=None, description="Version if available")
+    error: Optional[str] = Field(default=None, description="Error message if unavailable")
+
+
 class HealthResponse(BaseModel):
     """Response model for health check endpoint."""
 
-    status: str = Field(default="healthy", description="Service health status")
+    status: str = Field(default="healthy", description="Service health status: healthy, degraded, or unhealthy")
     version: str = Field(description="API version")
+    dependencies: Optional[Dict[str, DependencyStatus]] = Field(
+        default=None,
+        description="Status of external dependencies"
+    )
 
 
 class CacheStatsResponse(BaseModel):

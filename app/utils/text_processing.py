@@ -76,14 +76,25 @@ def extract_emails(text: str) -> list:
 
 
 def extract_phone_numbers(text: str) -> list:
-    """Extract phone numbers from text."""
+    """Extract phone numbers from text.
+
+    Supports common US/international formats with validation to reduce false positives.
+    """
     phone_patterns = [
-        r"\+?1?[-.\s]?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}",
-        r"\+\d{1,3}[-.\s]?\d{1,4}[-.\s]?\d{1,4}[-.\s]?\d{1,9}",
+        # US format: (123) 456-7890, 123-456-7890, 123.456.7890, +1 123 456 7890
+        r"(?:\+1[-.\s]?)?\(?[2-9]\d{2}\)?[-.\s]?[2-9]\d{2}[-.\s]?\d{4}",
+        # International format: +XX XXX XXX XXXX (with country code)
+        r"\+[1-9]\d{0,2}[-.\s]?\d{2,4}[-.\s]?\d{3,4}[-.\s]?\d{3,4}",
     ]
     phones = []
     for pattern in phone_patterns:
-        phones.extend(re.findall(pattern, text))
+        matches = re.findall(pattern, text)
+        # Filter out matches that are likely not phone numbers (e.g., too many digits)
+        for match in matches:
+            # Remove non-digit characters and check length
+            digits_only = re.sub(r'\D', '', match)
+            if 10 <= len(digits_only) <= 15:  # Valid phone numbers are 10-15 digits
+                phones.append(match.strip())
     return list(set(phones))
 
 

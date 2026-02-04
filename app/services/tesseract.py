@@ -4,7 +4,9 @@ This module provides a service wrapper for Tesseract OCR with
 image preprocessing, text extraction, and confidence scoring.
 """
 
-from typing import Tuple, Optional
+import re
+import threading
+from typing import Tuple, Optional, Set
 
 from PIL import Image
 
@@ -14,6 +16,9 @@ from ..core.logging import get_logger
 from ..utils.image_utils import preprocess_image
 
 logger = get_logger(__name__)
+
+# Valid Tesseract language code pattern (ISO 639-3 codes, e.g., 'eng', 'deu', 'chi_sim')
+LANG_CODE_PATTERN = re.compile(r'^[a-z]{3}(_[a-z]+)?(\+[a-z]{3}(_[a-z]+)?)*$')
 
 
 class TesseractService:
@@ -32,29 +37,44 @@ class TesseractService:
         self._available: Optional[bool] = None
         self._version: Optional[str] = None
         self._init_error: Optional[str] = None
+        self._supported_languages: Optional[Set[str]] = None
+        self._init_lock = threading.Lock()
 
     def _check_availability(self) -> None:
-        """Check if Tesseract is installed and accessible."""
+        """Check if Tesseract is installed and accessible (thread-safe)."""
         if self._available is not None:
             return
 
-        try:
-            import pytesseract
+        with self._init_lock:
+            # Double-check after acquiring lock
+            if self._available is not None:
+                return
 
-            version = pytesseract.get_tesseract_version()
-            self._version = str(version)
-            self._available = True
-            logger.info(f"Tesseract OCR available: version {self._version}")
+            try:
+                import pytesseract
 
-        except ImportError as e:
-            self._init_error = f"pytesseract package not installed: {e}"
-            self._available = False
-            logger.warning(self._init_error)
+                version = pytesseract.get_tesseract_version()
+                self._version = str(version)
+                # Cache supported languages at init
+                self._supported_languages = set(pytesseract.get_languages())
+                self._available = True
+                logger.info(f"Tesseract OCR available: version {self._version}, "
+                           f"languages: {len(self._supported_languages)}")
 
-        except Exception as e:
-            self._init_error = f"Tesseract not available: {e}"
-            self._available = False
-            logger.warning(self._init_error)
+            except ImportError as e:
+                self._init_error = f"pytesseract package not installed: {e}"
+                self._available = False
+                logger.warning(self._init_error)
+
+            except (OSError, IOError) as e:
+                self._init_error = f"Tesseract binary not found or not accessible: {e}"
+                self._available = False
+                logger.warning(self._init_error)
+
+            except Exception as e:
+                self._init_error = f"Tesseract not available: {e}"
+                self._available = False
+                logger.warning(self._init_error)
 
     @property
     def is_available(self) -> bool:
@@ -76,6 +96,38 @@ class TesseractService:
         self._check_availability()
         return self._version
 
+    def _validate_language(self, lang: str) -> str:
+        """Validate and sanitize language parameter.
+
+        Args:
+            lang: Language code(s) to validate
+
+        Returns:
+            Validated language string
+
+        Raises:
+            TesseractError: If language code is invalid
+        """
+        # Check format matches expected pattern
+        if not LANG_CODE_PATTERN.match(lang):
+            raise TesseractError(
+                message=f"Invalid language code format: '{lang}'. Expected format like 'eng' or 'eng+deu'",
+                details={"provided_lang": lang}
+            )
+
+        # Check if language is installed (if we have the list)
+        if self._supported_languages:
+            requested_langs = set(lang.split('+'))
+            unsupported = requested_langs - self._supported_languages
+            if unsupported:
+                raise TesseractError(
+                    message=f"Unsupported language(s): {unsupported}. "
+                           f"Available: {sorted(self._supported_languages)[:10]}...",
+                    details={"unsupported": list(unsupported), "requested": lang}
+                )
+
+        return lang
+
     def extract_text(
         self,
         image: Image.Image,
@@ -87,13 +139,13 @@ class TesseractService:
         Args:
             image: PIL Image object
             preprocess: Whether to apply preprocessing (default: True)
-            lang: Language hint for OCR (default: 'eng')
+            lang: Language hint for OCR (default: 'eng'). Must be valid ISO 639-3 code.
 
         Returns:
             Tuple of (extracted_text, confidence_score)
 
         Raises:
-            TesseractError: If OCR processing fails
+            TesseractError: If OCR processing fails or language is invalid
         """
         self._check_availability()
 
@@ -102,6 +154,9 @@ class TesseractService:
                 message=self._init_error or "Tesseract is not available",
                 details={"init_error": self._init_error}
             )
+
+        # Validate language parameter to prevent injection
+        validated_lang = self._validate_language(lang)
 
         try:
             import pytesseract
@@ -114,10 +169,10 @@ class TesseractService:
                 processed_image = image
 
             # Get detailed OCR data including confidence scores
-            logger.debug(f"Running Tesseract OCR with lang={lang}")
+            logger.debug(f"Running Tesseract OCR with lang={validated_lang}")
             data = pytesseract.image_to_data(
                 processed_image,
-                lang=lang,
+                lang=validated_lang,
                 output_type=pytesseract.Output.DICT
             )
 
@@ -133,6 +188,16 @@ class TesseractService:
 
         except TesseractError:
             raise
+
+        except (OSError, IOError) as e:
+            logger.error(f"Tesseract I/O error: {e}")
+            raise TesseractError(
+                message=f"Tesseract I/O error: {str(e)}",
+                details={"exception_type": type(e).__name__}
+            )
+
+        except (KeyboardInterrupt, SystemExit):
+            raise  # Don't catch system signals
 
         except Exception as e:
             logger.error(f"Tesseract OCR failed: {e}", exc_info=True)

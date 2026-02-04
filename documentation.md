@@ -2,19 +2,35 @@
 
 A powerful OCR (Optical Character Recognition) API that extracts text from images using Google Cloud Vision API with Tesseract as fallback.
 
+**Version:** 1.2.0
+
 **Base URL:** `https://ocr-service-243539984009.us-central1.run.app`
+
+---
+
+## Authentication
+
+All `/v1/*` endpoints require API key authentication.
+
+**Header:** `X-API-Key: YOUR_API_KEY`
+
+Example:
+```bash
+curl -H "X-API-Key: YOUR_API_KEY" https://your-api-url/v1/extract-text
+```
 
 ---
 
 ## Quick Start
 
-Extract text from an image in seconds using the sample image:
+Extract text from an image:
 
 ```bash
-curl -X POST -F "image=@tests/sample_images/text_sample.jpg" https://ocr-service-243539984009.us-central1.run.app/extract-text
+curl -X POST \
+  -H "X-API-Key: YOUR_API_KEY" \
+  -F "image=@tests/sample_images/text_sample.jpg" \
+  https://ocr-service-243539984009.us-central1.run.app/v1/extract-text
 ```
-
-That's it! You'll get back the extracted text in JSON format.
 
 ---
 
@@ -22,7 +38,7 @@ That's it! You'll get back the extracted text in JSON format.
 
 ### 1. Extract Text from Single Image
 
-**POST** `/extract-text`
+**POST** `/v1/extract-text`
 
 Upload an image and get the extracted text back.
 
@@ -31,8 +47,11 @@ Upload an image and get the extracted text back.
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `image` | File | Yes | Image file to process |
+| `include_metadata` | Query | No | Include image metadata (default: true) |
+| `include_entities` | Query | No | Extract entities like emails/phones (default: true) |
+| `use_cache` | Query | No | Use caching for identical images (default: true) |
 
-**Supported Formats:** JPG, JPEG, PNG, GIF, BMP, TIFF, WebP, HEIC
+**Supported Formats:** JPG, JPEG, PNG, GIF, BMP, TIFF, WebP
 
 **Max File Size:** 10MB
 
@@ -41,18 +60,20 @@ Upload an image and get the extracted text back.
 **Using curl:**
 ```bash
 curl -X POST \
+  -H "X-API-Key: YOUR_API_KEY" \
   -F "image=@tests/sample_images/text_sample.jpg" \
-  https://ocr-service-243539984009.us-central1.run.app/extract-text
+  "https://ocr-service-243539984009.us-central1.run.app/v1/extract-text?include_metadata=true&include_entities=true"
 ```
 
 **Using Python:**
 ```python
 import requests
 
-url = "https://ocr-service-243539984009.us-central1.run.app/extract-text"
+url = "https://ocr-service-243539984009.us-central1.run.app/v1/extract-text"
+headers = {"X-API-Key": "YOUR_API_KEY"}
 files = {"image": open("tests/sample_images/text_sample.jpg", "rb")}
 
-response = requests.post(url, files=files)
+response = requests.post(url, headers=headers, files=files)
 print(response.json())
 ```
 
@@ -65,8 +86,11 @@ const axios = require('axios');
 const form = new FormData();
 form.append('image', fs.createReadStream('tests/sample_images/text_sample.jpg'));
 
-axios.post('https://ocr-service-243539984009.us-central1.run.app/extract-text', form, {
-  headers: form.getHeaders()
+axios.post('https://ocr-service-243539984009.us-central1.run.app/v1/extract-text', form, {
+  headers: {
+    ...form.getHeaders(),
+    'X-API-Key': 'YOUR_API_KEY'
+  }
 }).then(res => console.log(res.data));
 ```
 
@@ -130,43 +154,48 @@ axios.post('https://ocr-service-243539984009.us-central1.run.app/extract-text', 
 
 ### 2. Batch Processing (Multiple Images)
 
-**POST** `/extract-text/batch`
+**POST** `/v1/extract-text/batch`
 
-Process multiple images in a single request.
+Process multiple images in a single request. Returns HTTP 207 if some images succeed and others fail.
 
 #### Request
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `images` | Files | Yes | Multiple image files (up to 10) |
+| `include_metadata` | Query | No | Include image metadata (default: false for performance) |
+| `include_entities` | Query | No | Extract entities (default: false for performance) |
+| `use_cache` | Query | No | Use caching (default: true) |
 
 #### How to Upload
 
 **Using curl:**
 ```bash
 curl -X POST \
+  -H "X-API-Key: YOUR_API_KEY" \
   -F "images=@tests/sample_images/text_sample.jpg" \
   -F "images=@tests/sample_images/test.png" \
   -F "images=@tests/sample_images/small.jpg" \
-  https://ocr-service-243539984009.us-central1.run.app/extract-text/batch
+  https://ocr-service-243539984009.us-central1.run.app/v1/extract-text/batch
 ```
 
 **Using Python:**
 ```python
 import requests
 
-url = "https://ocr-service-243539984009.us-central1.run.app/extract-text/batch"
+url = "https://ocr-service-243539984009.us-central1.run.app/v1/extract-text/batch"
+headers = {"X-API-Key": "YOUR_API_KEY"}
 files = [
     ("images", open("tests/sample_images/text_sample.jpg", "rb")),
     ("images", open("tests/sample_images/test.png", "rb")),
     ("images", open("tests/sample_images/small.jpg", "rb"))
 ]
 
-response = requests.post(url, files=files)
+response = requests.post(url, headers=headers, files=files)
 print(response.json())
 ```
 
-#### Success Response (200 OK)
+#### Success Response (200 OK / 207 Multi-Status)
 
 ```json
 {
@@ -174,13 +203,13 @@ print(response.json())
   "total_files": 3,
   "successful": 3,
   "failed": 0,
-  "total_processing_time_ms": 580,
+  "total_processing_time_ms": 1011,
   "results": [
     {
       "filename": "text_sample.jpg",
       "success": true,
-      "text": "Hello, World!\nThis is a sample OCR test image.\nTesting 123... Special chars: @#$%",
-      "text_formatted": "Hello, World! This is a sample OCR test image. Testing 123... Special chars: @#$%",
+      "text": "Hello, World!...",
+      "text_formatted": "Hello, World!...",
       "confidence": 0.9768,
       "ocr_engine": "cloud_vision",
       "cached": true,
@@ -190,21 +219,10 @@ print(response.json())
       "filename": "test.png",
       "success": true,
       "text": "PNG Test Image",
-      "text_formatted": "PNG Test Image",
       "confidence": 0.9812,
       "ocr_engine": "cloud_vision",
       "cached": false,
       "processing_time_ms": 322
-    },
-    {
-      "filename": "small.jpg",
-      "success": true,
-      "text": "Small text",
-      "text_formatted": "Small text",
-      "confidence": 0.9262,
-      "ocr_engine": "cloud_vision",
-      "cached": false,
-      "processing_time_ms": 258
     }
   ]
 }
@@ -212,11 +230,70 @@ print(response.json())
 
 ---
 
-### 3. Health Check
+### 3. Cache Statistics
+
+**GET** `/v1/cache/stats`
+
+Get current cache statistics including hit rate and configuration.
+
+```bash
+curl -H "X-API-Key: YOUR_API_KEY" \
+  https://ocr-service-243539984009.us-central1.run.app/v1/cache/stats
+```
+
+#### Response (Redis)
+
+```json
+{
+  "type": "redis",
+  "status": "connected",
+  "ttl": 3600,
+  "redis_version": "7.0.0",
+  "used_memory_human": "1.5M",
+  "total_keys": 42
+}
+```
+
+#### Response (In-Memory)
+
+```json
+{
+  "type": "in-memory",
+  "max_size": 100,
+  "ttl": 3600,
+  "current_size": 15
+}
+```
+
+---
+
+### 4. Clear Cache
+
+**DELETE** `/v1/cache`
+
+Clear all cached OCR results.
+
+```bash
+curl -X DELETE -H "X-API-Key: YOUR_API_KEY" \
+  https://ocr-service-243539984009.us-central1.run.app/v1/cache
+```
+
+#### Response
+
+```json
+{
+  "success": true,
+  "message": "Cache cleared successfully"
+}
+```
+
+---
+
+### 5. Health Check
 
 **GET** `/health`
 
-Check if the API is running and which OCR engines are available.
+Check service health and dependency status. No authentication required.
 
 ```bash
 curl https://ocr-service-243539984009.us-central1.run.app/health
@@ -227,17 +304,35 @@ curl https://ocr-service-243539984009.us-central1.run.app/health
 ```json
 {
   "status": "healthy",
-  "version": "1.0.0",
-  "ocr_engines": {
-    "cloud_vision": true,
-    "tesseract": true
+  "version": "1.2.0",
+  "dependencies": {
+    "vision_api": {
+      "available": true,
+      "version": null,
+      "error": null
+    },
+    "tesseract": {
+      "available": true,
+      "version": "5.5.2",
+      "error": null
+    },
+    "cache": {
+      "available": true,
+      "version": "7.0.0",
+      "error": null
+    }
   }
 }
 ```
 
+**Status Values:**
+- `healthy` - All dependencies available
+- `degraded` - Non-critical dependency unavailable (e.g., cache)
+- `unhealthy` - Critical dependency unavailable (no OCR engine)
+
 ---
 
-### 4. API Info
+### 6. API Info
 
 **GET** `/`
 
@@ -252,12 +347,34 @@ curl https://ocr-service-243539984009.us-central1.run.app/
 ```json
 {
   "name": "OCR Image Text Extraction API",
-  "version": "1.0.0",
-  "description": "Extract text from images using Google Cloud Vision API with Tesseract fallback",
+  "version": "1.2.0",
+  "description": "Extract text from images using OCR",
+  "features": [
+    "Multiple image formats (JPG, PNG, GIF, WebP, BMP, TIFF)",
+    "Dual OCR engines (Cloud Vision + Tesseract fallback)",
+    "Confidence scores",
+    "Text preprocessing and formatting",
+    "Entity extraction (emails, phones, URLs, dates)",
+    "Image metadata and EXIF data",
+    "Quality assessment",
+    "Result caching",
+    "Batch processing (up to 10 images)",
+    "Rate limiting",
+    "Security scanning"
+  ],
   "endpoints": {
-    "extract_text": "POST /extract-text",
-    "batch_extract": "POST /extract-text/batch",
-    "health": "GET /health"
+    "extract_text": "POST /v1/extract-text",
+    "batch_extract": "POST /v1/extract-text/batch",
+    "cache_stats": "GET /v1/cache/stats",
+    "clear_cache": "DELETE /v1/cache",
+    "health": "GET /health",
+    "docs": "GET /docs"
+  },
+  "limits": {
+    "max_file_size_mb": 10,
+    "max_batch_size": 10,
+    "rate_limit": "60/minute",
+    "rate_limit_batch": "10/minute"
   }
 }
 ```
@@ -266,7 +383,7 @@ curl https://ocr-service-243539984009.us-central1.run.app/
 
 ## Error Responses
 
-The API returns clear error messages when something goes wrong.
+The API returns consistent error messages in JSON format.
 
 ### Error Response Format
 
@@ -282,51 +399,31 @@ The API returns clear error messages when something goes wrong.
 
 | HTTP Status | Error Code | Description | Example |
 |-------------|------------|-------------|---------|
-| 400 | `INVALID_FILE_TYPE` | File is not a supported image format | Uploading a .pdf file |
-| 400 | `INVALID_IMAGE` | Image file is corrupted or unreadable | Damaged image file |
-| 400 | `INVALID_CONTENT` | File content doesn't match extension | .jpg file that's actually a .txt |
+| 400 | `INVALID_FILE_TYPE` | Unsupported image format | Uploading a .pdf file |
+| 400 | `INVALID_IMAGE` | Corrupted or unreadable image | Damaged image file |
+| 401 | `UNAUTHORIZED` | Missing or invalid API key | No X-API-Key header |
 | 413 | `FILE_TOO_LARGE` | File exceeds 10MB limit | 15MB image upload |
 | 422 | `MISSING_FILE` | No file was uploaded | Empty request |
-| 429 | `RATE_LIMITED` | Too many requests | Exceeded 100 requests/minute |
+| 422 | `TOO_MANY_FILES` | More than 10 files in batch | 11 images in batch |
+| 429 | `RATE_LIMIT_EXCEEDED` | Too many requests | Exceeded rate limit |
 | 500 | `OCR_FAILED` | OCR processing failed | Both engines failed |
 | 500 | `INTERNAL_ERROR` | Unexpected server error | Server issue |
 
-### Example Error Responses
+---
 
-**Invalid file type:**
-```bash
-curl -X POST -F "image=@document.pdf" https://ocr-service-243539984009.us-central1.run.app/extract-text
-```
+## Rate Limits
+
+| Endpoint | Limit |
+|----------|-------|
+| `/v1/extract-text` | 60 requests per minute |
+| `/v1/extract-text/batch` | 10 requests per minute |
+
+Rate limit exceeded response:
 ```json
 {
   "success": false,
-  "error": "Invalid file type. Allowed: jpg, jpeg, png, gif, bmp, tiff, webp, heic",
-  "error_code": "INVALID_FILE_TYPE"
-}
-```
-
-**File too large:**
-```json
-{
-  "success": false,
-  "error": "File size exceeds maximum limit of 10MB",
-  "error_code": "FILE_TOO_LARGE"
-}
-```
-
-**No text found (not an error - returns empty text):**
-```bash
-curl -X POST -F "image=@tests/sample_images/no_text.jpg" https://ocr-service-243539984009.us-central1.run.app/extract-text
-```
-```json
-{
-  "success": true,
-  "text": "",
-  "text_formatted": "",
-  "confidence": 0.0,
-  "processing_time_ms": 300,
-  "ocr_engine": "cloud_vision",
-  "cached": false
+  "error": "Rate limit exceeded. Try again later.",
+  "error_code": "RATE_LIMIT_EXCEEDED"
 }
 ```
 
@@ -341,87 +438,35 @@ Sample images are included in the `tests/sample_images/` directory:
 | `text_sample.jpg` | Standard text image for basic testing |
 | `high_quality.jpg` | High resolution image |
 | `low_quality.jpg` | Low quality image to test preprocessing |
-| `rotated.jpg` | Rotated text to test deskew feature |
+| `rotated.jpg` | Rotated text |
 | `invoice.jpg` | Invoice with structured text |
-| `small.jpg` | Small image to test upscaling |
+| `small.jpg` | Small image to test handling |
 | `no_text.jpg` | Image without text |
 | `test.png` | PNG format test |
 
-### Test with Sample Images
+### Test Commands
 
-**Basic text extraction:**
 ```bash
-curl -X POST -F "image=@tests/sample_images/text_sample.jpg" https://ocr-service-243539984009.us-central1.run.app/extract-text
-```
+# Set your API key
+export API_KEY="YOUR_API_KEY"
 
-**High quality image:**
-```bash
-curl -X POST -F "image=@tests/sample_images/high_quality.jpg" https://ocr-service-243539984009.us-central1.run.app/extract-text
-```
+# Single image
+curl -X POST -H "X-API-Key: $API_KEY" \
+  -F "image=@tests/sample_images/text_sample.jpg" \
+  https://ocr-service-243539984009.us-central1.run.app/v1/extract-text
 
-**Low quality image (tests preprocessing):**
-```bash
-curl -X POST -F "image=@tests/sample_images/low_quality.jpg" https://ocr-service-243539984009.us-central1.run.app/extract-text
-```
-
-**Rotated text (tests auto-deskew):**
-```bash
-curl -X POST -F "image=@tests/sample_images/rotated.jpg" https://ocr-service-243539984009.us-central1.run.app/extract-text
-```
-
-**Invoice with structured data:**
-```bash
-curl -X POST -F "image=@tests/sample_images/invoice.jpg" https://ocr-service-243539984009.us-central1.run.app/extract-text
-```
-
-**Small image (tests upscaling):**
-```bash
-curl -X POST -F "image=@tests/sample_images/small.jpg" https://ocr-service-243539984009.us-central1.run.app/extract-text
-```
-
-**PNG format:**
-```bash
-curl -X POST -F "image=@tests/sample_images/test.png" https://ocr-service-243539984009.us-central1.run.app/extract-text
-```
-
-**Image with no text (edge case):**
-```bash
-curl -X POST -F "image=@tests/sample_images/no_text.jpg" https://ocr-service-243539984009.us-central1.run.app/extract-text
-```
-
-### Test Batch Processing
-
-Process multiple sample images at once:
-```bash
-curl -X POST \
+# Batch processing
+curl -X POST -H "X-API-Key: $API_KEY" \
   -F "images=@tests/sample_images/text_sample.jpg" \
   -F "images=@tests/sample_images/invoice.jpg" \
-  -F "images=@tests/sample_images/high_quality.jpg" \
-  https://ocr-service-243539984009.us-central1.run.app/extract-text/batch
-```
+  https://ocr-service-243539984009.us-central1.run.app/v1/extract-text/batch
 
-### Test Health Check
-
-```bash
+# Health check
 curl https://ocr-service-243539984009.us-central1.run.app/health
-```
 
----
-
-## Rate Limits
-
-| Endpoint | Limit |
-|----------|-------|
-| `/extract-text` | 100 requests per minute |
-| `/extract-text/batch` | 20 requests per minute |
-
-If you exceed the limit, you'll receive:
-```json
-{
-  "success": false,
-  "error": "Rate limit exceeded. Try again later.",
-  "error_code": "RATE_LIMITED"
-}
+# Cache stats
+curl -H "X-API-Key: $API_KEY" \
+  https://ocr-service-243539984009.us-central1.run.app/v1/cache/stats
 ```
 
 ---
@@ -430,43 +475,43 @@ If you exceed the limit, you'll receive:
 
 1. **Image Quality:** Higher resolution images produce better results
 2. **Contrast:** Ensure good contrast between text and background
-3. **Orientation:** The API auto-corrects skewed images, but straight images work best
+3. **Orientation:** The API handles various orientations, but straight images work best
 4. **File Size:** Larger files take longer to process; optimize if speed matters
-5. **Caching:** Identical images are cached - subsequent requests are faster
+5. **Caching:** Identical images are cached - subsequent requests are instant
 
 ---
 
 ## Interactive Documentation
 
-Visit the Swagger UI for interactive API testing:
-
-**Swagger UI:** `https://ocr-service-243539984009.us-central1.run.app/docs`
-
-**ReDoc:** `https://ocr-service-243539984009.us-central1.run.app/redoc`
-
----
-
-## Support
-
-Having issues? Check these common solutions:
-
-| Problem | Solution |
-|---------|----------|
-| "Invalid file type" | Make sure you're uploading an image (JPG, PNG, etc.) |
-| "File too large" | Compress or resize your image under 10MB |
-| Low confidence score | Try a higher resolution image with better lighting |
-| Empty text result | The image might not contain readable text |
+- **Swagger UI:** `https://ocr-service-243539984009.us-central1.run.app/docs`
+- **ReDoc:** `https://ocr-service-243539984009.us-central1.run.app/redoc`
+- **Web Dashboard:** `https://ocr-service-243539984009.us-central1.run.app/web`
 
 ---
 
 ## Changelog
 
+**v1.2.0** - Production Release
+- Added `/v1/` API versioning prefix
+- Enhanced health check with dependency status
+- Added request ID tracking in logs
+- Static file cache headers
+- Thread-safe service initialization
+- Timing attack prevention for API key validation
+- Redis SSL support
+- Safe cache clearing (namespace-only)
+
+**v1.1.0** - Feature Update
+- Parallel batch processing
+- Entity extraction (emails, phones, URLs, dates)
+- Image quality assessment
+- Redis caching support
+- Rate limiting
+- API key authentication
+
 **v1.0.0** - Initial Release
 - Single image OCR extraction
 - Batch processing (up to 10 images)
 - Google Cloud Vision API + Tesseract fallback
-- Advanced image preprocessing for better accuracy
-- Caching for identical images
-- Rate limiting
-- Entity extraction (emails, phones, URLs, dates)
-- Image metadata and quality assessment
+- Image preprocessing
+- In-memory caching

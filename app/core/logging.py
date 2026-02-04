@@ -5,16 +5,43 @@ JSON logging support for better observability in production.
 """
 
 import logging
+import re
 import sys
 import json
 from datetime import datetime
 from typing import Any, Dict, Optional
+
+# Patterns for sensitive data that should be redacted in logs
+SENSITIVE_PATTERNS = [
+    (re.compile(r'(api[_-]?key|apikey|authorization|auth[_-]?token|password|secret|credential)["\']?\s*[:=]\s*["\']?([^"\'\s,}]+)', re.IGNORECASE), r'\1=***REDACTED***'),
+    (re.compile(r'(Bearer\s+)[A-Za-z0-9\-_]+\.?[A-Za-z0-9\-_]*\.?[A-Za-z0-9\-_]*', re.IGNORECASE), r'\1***REDACTED***'),
+    (re.compile(r'X-API-Key:\s*\S+', re.IGNORECASE), 'X-API-Key: ***REDACTED***'),
+]
+
+
+def _sanitize_sensitive_data(text: str) -> str:
+    """Remove sensitive data from log messages.
+
+    Args:
+        text: The text to sanitize
+
+    Returns:
+        Sanitized text with sensitive data redacted
+    """
+    if not text:
+        return text
+
+    for pattern, replacement in SENSITIVE_PATTERNS:
+        text = pattern.sub(replacement, text)
+
+    return text
 
 
 class StructuredFormatter(logging.Formatter):
     """Custom formatter for structured JSON logging.
 
     Outputs logs in JSON format for easy parsing by log aggregation tools.
+    Sanitizes sensitive data before logging.
     """
 
     def format(self, record: logging.LogRecord) -> str:
@@ -30,19 +57,26 @@ class StructuredFormatter(logging.Formatter):
             "timestamp": datetime.utcnow().isoformat() + "Z",
             "level": record.levelname,
             "logger": record.name,
-            "message": record.getMessage(),
+            "message": _sanitize_sensitive_data(record.getMessage()),
             "module": record.module,
             "function": record.funcName,
             "line": record.lineno,
         }
 
-        # Add exception info if present
+        # Add exception info if present (sanitized)
         if record.exc_info:
-            log_data["exception"] = self.formatException(record.exc_info)
+            exception_text = self.formatException(record.exc_info)
+            log_data["exception"] = _sanitize_sensitive_data(exception_text)
 
-        # Add extra fields
+        # Add extra fields (sanitized)
         if hasattr(record, "extra_data"):
-            log_data["extra"] = record.extra_data
+            sanitized_extra = {}
+            for key, value in record.extra_data.items():
+                if isinstance(value, str):
+                    sanitized_extra[key] = _sanitize_sensitive_data(value)
+                else:
+                    sanitized_extra[key] = value
+            log_data["extra"] = sanitized_extra
 
         return json.dumps(log_data)
 

@@ -4,12 +4,15 @@ This module provides centralized configuration using pydantic-settings
 for type-safe environment variable handling with validation.
 """
 
-import os
+import re
 from functools import lru_cache
 from typing import Optional
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Valid rate limit pattern: number/period (e.g., "60/minute", "100/hour")
+RATE_LIMIT_PATTERN = re.compile(r"^\d+/(second|minute|hour|day)$")
 
 
 class Settings(BaseSettings):
@@ -58,10 +61,10 @@ class Settings(BaseSettings):
     redis_port: int = Field(default=6379)
     redis_db: int = Field(default=0)
     redis_password: Optional[str] = Field(default=None)
+    redis_ssl: bool = Field(default=False)  # Enable SSL for Redis (required for cloud Redis)
 
     # Security
     api_key: Optional[str] = Field(default=None)  # API Key for authentication
-    allowed_hosts: str = Field(default="*")
     cors_origins: str = Field(default="*")
 
     # Timeouts (in seconds)
@@ -97,6 +100,17 @@ class Settings(BaseSettings):
             raise ValueError("cache_ttl_seconds must be at least 60 seconds")
         if v > 86400:  # 24 hours
             raise ValueError("cache_ttl_seconds must not exceed 86400 (24 hours)")
+        return v
+
+    @field_validator("rate_limit", "rate_limit_batch")
+    @classmethod
+    def validate_rate_limit(cls, v: str) -> str:
+        """Validate rate limit format (e.g., '60/minute')."""
+        if not RATE_LIMIT_PATTERN.match(v):
+            raise ValueError(
+                f"Invalid rate limit format: {v}. "
+                "Must be in format 'number/period' (e.g., '60/minute', '100/hour')"
+            )
         return v
 
 

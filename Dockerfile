@@ -16,6 +16,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
+# Create non-root user for security
+RUN groupadd --gid 1000 appgroup \
+    && useradd --uid 1000 --gid appgroup --shell /bin/bash --create-home appuser
+
 # Set working directory
 WORKDIR /app
 
@@ -26,6 +30,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code and frontend (done last as these change most frequently)
 COPY app/ ./app/
 COPY frontend/ ./frontend/
+
+# Change ownership to non-root user
+RUN chown -R appuser:appgroup /app
+
+# Switch to non-root user
+USER appuser
 
 # Expose port
 EXPOSE 8080

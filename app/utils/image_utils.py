@@ -1,16 +1,43 @@
 """Image preprocessing utilities for better OCR results."""
 
-from PIL import Image, ImageFilter, ImageOps
+from PIL import Image, ImageFilter, ImageOps, ImageEnhance
 import io
 
 
 def preprocess_image(image: Image.Image) -> Image.Image:
+    """Preprocess an image for better OCR results.
+
+    Applies several transformations to improve text recognition:
+    1. Convert to grayscale
+    2. Enhance contrast
+    3. Apply slight sharpening
+    4. Optionally binarize for very low contrast images
+
+    Args:
+        image: PIL Image object to preprocess
+
+    Returns:
+        Preprocessed PIL Image optimized for OCR
     """
-    Preprocess an image for better OCR results.
-    ...
-"""
-    # [Preprocess logic]
-    return binary
+    # Convert to grayscale if not already
+    if image.mode != "L":
+        processed = image.convert("L")
+    else:
+        processed = image.copy()
+
+    # Enhance contrast
+    enhancer = ImageEnhance.Contrast(processed)
+    processed = enhancer.enhance(1.5)
+
+    # Apply slight sharpening to improve edge definition
+    processed = processed.filter(ImageFilter.SHARPEN)
+
+    # Optional: Apply adaptive thresholding for very low contrast images
+    # This converts to binary (black and white) which can help with some documents
+    # Uncomment if needed for specific use cases:
+    # processed = processed.point(lambda x: 0 if x < 128 else 255, '1')
+
+    return processed
 
 
 def resize_image_if_needed(image: Image.Image, max_width: int) -> Image.Image:

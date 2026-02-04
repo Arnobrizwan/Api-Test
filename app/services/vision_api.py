@@ -5,9 +5,14 @@ OCR capabilities with proper initialization, error handling, and
 text extraction methods.
 """
 
+import threading
 from typing import Tuple, Optional
 
 from ..core.config import settings
+from ..core.constants import (
+    DEFAULT_CONFIDENCE_DOCUMENT_DETECTION,
+    DEFAULT_CONFIDENCE_TEXT_DETECTION,
+)
 from ..core.exceptions import VisionAPIError
 from ..core.logging import get_logger
 
@@ -30,32 +35,39 @@ class VisionAPIService:
         self._client = None
         self._initialized = False
         self._init_error: Optional[str] = None
+        self._init_lock = threading.Lock()
 
     def _init_client(self) -> None:
-        """Lazily initialize the Vision API client.
+        """Lazily initialize the Vision API client (thread-safe).
 
         Defers client creation until first use to avoid startup delays
-        and to handle missing credentials gracefully.
+        and to handle missing credentials gracefully. Uses double-checked
+        locking to ensure thread safety without excessive lock contention.
         """
         if self._initialized:
             return
 
-        try:
-            from google.cloud import vision
+        with self._init_lock:
+            # Double-check after acquiring lock
+            if self._initialized:
+                return
 
-            self._client = vision.ImageAnnotatorClient()
-            self._initialized = True
-            logger.info("Google Cloud Vision API client initialized successfully")
+            try:
+                from google.cloud import vision
 
-        except ImportError as e:
-            self._init_error = f"google-cloud-vision package not installed: {e}"
-            logger.warning(self._init_error)
-            self._initialized = True
+                self._client = vision.ImageAnnotatorClient()
+                self._initialized = True
+                logger.info("Google Cloud Vision API client initialized successfully")
 
-        except Exception as e:
-            self._init_error = f"Failed to initialize Vision API client: {e}"
-            logger.warning(self._init_error)
-            self._initialized = True
+            except ImportError as e:
+                self._init_error = f"google-cloud-vision package not installed: {e}"
+                logger.warning(self._init_error)
+                self._initialized = True
+
+            except Exception as e:
+                self._init_error = f"Failed to initialize Vision API client: {e}"
+                logger.warning(self._init_error)
+                self._initialized = True
 
     @property
     def is_available(self) -> bool:
@@ -164,14 +176,14 @@ class VisionAPIService:
             if confidences:
                 confidence = sum(confidences) / len(confidences)
             else:
-                # Default confidence for successful extraction
-                confidence = 0.95
+                # API didn't provide confidence scores; use estimated default
+                confidence = DEFAULT_CONFIDENCE_DOCUMENT_DETECTION
 
         # Fall back to text annotations (from text detection)
         elif response.text_annotations:
             text = response.text_annotations[0].description.strip()
-            # Text detection doesn't provide confidence, use default
-            confidence = 0.90
+            # TEXT_DETECTION doesn't provide confidence; use estimated default
+            confidence = DEFAULT_CONFIDENCE_TEXT_DETECTION
 
         return text, confidence
 

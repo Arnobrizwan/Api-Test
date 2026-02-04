@@ -117,3 +117,19 @@ MAX_ASPECT_RATIO = 10
 MIN_ASPECT_RATIO = 0.1
 MIN_BRIGHTNESS = 0.2
 MAX_BRIGHTNESS = 0.9
+
+# OCR service constants
+MAX_OCR_WORKERS = 4  # Maximum concurrent workers for OCR operations
+DEFAULT_CONFIDENCE_DOCUMENT_DETECTION = 0.95  # Estimated confidence for document detection
+DEFAULT_CONFIDENCE_TEXT_DETECTION = 0.90  # Estimated confidence for text detection
+
+# Validation constants
+MIN_IMAGE_SIZE_BYTES = 100  # Smallest valid images are ~100+ bytes
+
+# Cache constants
+CACHE_NAMESPACE = "ocr:v1:"  # Cache key namespace to prevent collisions
+REDIS_SCAN_COUNT = 100  # Number of keys to scan per iteration when clearing cache
+
+# Static file cache control (in seconds)
+STATIC_FILE_CACHE_MAX_AGE = 3600  # 1 hour for static files
+STATIC_FILE_IMMUTABLE_MAX_AGE = 31536000  # 1 year for versioned/hashed assets

@@ -9,6 +9,7 @@ import hashlib
 import secrets
 from typing import Optional, Tuple
 from functools import lru_cache
+import hmac
 
 # Patterns for detecting potentially malicious content
 SUSPICIOUS_PATTERNS = [
@@ -30,6 +31,9 @@ IMAGE_SIGNATURES = {
     b'II*\x00': 'tiff',  # Little-endian TIFF
     b'MM\x00*': 'tiff',  # Big-endian TIFF
 }
+
+# HEIF/HEIC brand identifiers (found at offset 8 in ftyp box)
+HEIF_BRANDS = {b'heic', b'heix', b'hevc', b'hevx', b'mif1', b'msf1'}
 
 
 def validate_image_magic_bytes(content: bytes) -> Tuple[bool, Optional[str]]:
@@ -55,6 +59,15 @@ def validate_image_magic_bytes(content: bytes) -> Tuple[bool, Optional[str]]:
     if content[:4] == b'RIFF' and len(content) >= 12:
         if content[8:12] == b'WEBP':
             return True, 'webp'
+
+    # Special case for HEIF/HEIC (check ftyp box structure)
+    # HEIF files start with ftyp box: [size:4][ftyp:4][brand:4]
+    if len(content) >= 12:
+        # Check for ftyp box marker at offset 4
+        if content[4:8] == b'ftyp':
+            brand = content[8:12]
+            if brand in HEIF_BRANDS:
+                return True, 'heif'
 
     return False, None
 
@@ -116,19 +129,20 @@ def compute_content_hash(content: bytes, algorithm: str = "sha256") -> str:
 
     Args:
         content: Content to hash
-        algorithm: Hash algorithm (sha256, sha512, md5)
+        algorithm: Hash algorithm (sha256 or sha512)
 
     Returns:
         Hexadecimal hash string
+
+    Note:
+        MD5 is intentionally not supported as it is cryptographically broken.
     """
     if algorithm == "sha256":
         return hashlib.sha256(content).hexdigest()
     elif algorithm == "sha512":
         return hashlib.sha512(content).hexdigest()
-    elif algorithm == "md5":
-        return hashlib.md5(content).hexdigest()
     else:
-        raise ValueError(f"Unsupported hash algorithm: {algorithm}")
+        raise ValueError(f"Unsupported hash algorithm: {algorithm}. Use 'sha256' or 'sha512'.")
 
 
 def generate_request_id() -> str:
@@ -149,18 +163,26 @@ api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
 
 async def verify_api_key(api_key: str = Security(api_key_header)):
     """Verify the provided API key against the configured key.
-    
+
     If no API_KEY is configured in settings, authentication is skipped.
+    Uses constant-time comparison to prevent timing attacks.
     """
     if not settings.api_key:
         return None
-        
-    if api_key == settings.api_key:
+
+    if not api_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required",
+        )
+
+    # Use secrets.compare_digest for constant-time comparison (prevents timing attacks)
+    if secrets.compare_digest(api_key.encode('utf-8'), settings.api_key.encode('utf-8')):
         return api_key
-        
+
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Invalid or missing API Key",
+        detail="Authentication required",
     )
 
 

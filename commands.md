@@ -4,30 +4,56 @@ All the commands you need to run and test the OCR API.
 
 ---
 
+## Setup (Run These First!)
+
+```bash
+# Set the API URL
+export OCR_API_URL="https://ocr-service-243539984009.us-central1.run.app"
+
+# Set your API Key
+export OCR_API_KEY="OCR_Secret_2026"
+```
+
+---
+
 ## Quick Test Commands
+
+### Health Check (No Auth Required)
+```bash
+curl $OCR_API_URL/health
+```
+
+### API Info (No Auth Required)
+```bash
+curl $OCR_API_URL/
+```
 
 ### Single Image OCR
 ```bash
-curl -X POST -F "image=@tests/sample_images/text_sample.jpg" https://ocr-service-243539984009.us-central1.run.app/extract-text
+curl -X POST \
+  -H "X-API-Key: $OCR_API_KEY" \
+  -F "image=@tests/sample_images/text_sample.jpg" \
+  $OCR_API_URL/v1/extract-text
 ```
 
 ### Batch OCR (Multiple Images)
 ```bash
 curl -X POST \
+  -H "X-API-Key: $OCR_API_KEY" \
   -F "images=@tests/sample_images/text_sample.jpg" \
   -F "images=@tests/sample_images/test.png" \
   -F "images=@tests/sample_images/small.jpg" \
-  https://ocr-service-243539984009.us-central1.run.app/extract-text/batch
+  $OCR_API_URL/v1/extract-text/batch
 ```
 
-### Health Check
+### Cache Statistics
 ```bash
-curl https://ocr-service-243539984009.us-central1.run.app/health
+curl -H "X-API-Key: $OCR_API_KEY" $OCR_API_URL/v1/cache/stats
 ```
 
-### API Info
+### Clear Cache
 ```bash
-curl https://ocr-service-243539984009.us-central1.run.app/
+curl -X DELETE -H "X-API-Key: $OCR_API_KEY" $OCR_API_URL/v1/cache
 ```
 
 ---
@@ -36,28 +62,28 @@ curl https://ocr-service-243539984009.us-central1.run.app/
 
 ```bash
 # Standard text sample
-curl -X POST -F "image=@tests/sample_images/text_sample.jpg" https://ocr-service-243539984009.us-central1.run.app/extract-text
+curl -X POST -H "X-API-Key: $OCR_API_KEY" -F "image=@tests/sample_images/text_sample.jpg" $OCR_API_URL/v1/extract-text
 
 # High quality image
-curl -X POST -F "image=@tests/sample_images/high_quality.jpg" https://ocr-service-243539984009.us-central1.run.app/extract-text
+curl -X POST -H "X-API-Key: $OCR_API_KEY" -F "image=@tests/sample_images/high_quality.jpg" $OCR_API_URL/v1/extract-text
 
 # Low quality image (tests preprocessing)
-curl -X POST -F "image=@tests/sample_images/low_quality.jpg" https://ocr-service-243539984009.us-central1.run.app/extract-text
+curl -X POST -H "X-API-Key: $OCR_API_KEY" -F "image=@tests/sample_images/low_quality.jpg" $OCR_API_URL/v1/extract-text
 
 # Rotated text
-curl -X POST -F "image=@tests/sample_images/rotated.jpg" https://ocr-service-243539984009.us-central1.run.app/extract-text
+curl -X POST -H "X-API-Key: $OCR_API_KEY" -F "image=@tests/sample_images/rotated.jpg" $OCR_API_URL/v1/extract-text
 
 # Invoice
-curl -X POST -F "image=@tests/sample_images/invoice.jpg" https://ocr-service-243539984009.us-central1.run.app/extract-text
+curl -X POST -H "X-API-Key: $OCR_API_KEY" -F "image=@tests/sample_images/invoice.jpg" $OCR_API_URL/v1/extract-text
 
-# Small image (tests upscaling)
-curl -X POST -F "image=@tests/sample_images/small.jpg" https://ocr-service-243539984009.us-central1.run.app/extract-text
+# Small image
+curl -X POST -H "X-API-Key: $OCR_API_KEY" -F "image=@tests/sample_images/small.jpg" $OCR_API_URL/v1/extract-text
 
 # PNG format
-curl -X POST -F "image=@tests/sample_images/test.png" https://ocr-service-243539984009.us-central1.run.app/extract-text
+curl -X POST -H "X-API-Key: $OCR_API_KEY" -F "image=@tests/sample_images/test.png" $OCR_API_URL/v1/extract-text
 
 # No text (edge case)
-curl -X POST -F "image=@tests/sample_images/no_text.jpg" https://ocr-service-243539984009.us-central1.run.app/extract-text
+curl -X POST -H "X-API-Key: $OCR_API_KEY" -F "image=@tests/sample_images/no_text.jpg" $OCR_API_URL/v1/extract-text
 ```
 
 ---
@@ -67,12 +93,12 @@ curl -X POST -F "image=@tests/sample_images/no_text.jpg" https://ocr-service-243
 Add `| python3 -m json.tool` to format the JSON response:
 
 ```bash
-curl -s -X POST -F "image=@tests/sample_images/text_sample.jpg" https://ocr-service-243539984009.us-central1.run.app/extract-text | python3 -m json.tool
+curl -s -X POST -H "X-API-Key: $OCR_API_KEY" -F "image=@tests/sample_images/text_sample.jpg" $OCR_API_URL/v1/extract-text | python3 -m json.tool
 ```
 
 Or use `jq` if installed:
 ```bash
-curl -s -X POST -F "image=@tests/sample_images/text_sample.jpg" https://ocr-service-243539984009.us-central1.run.app/extract-text | jq
+curl -s -X POST -H "X-API-Key: $OCR_API_KEY" -F "image=@tests/sample_images/text_sample.jpg" $OCR_API_URL/v1/extract-text | jq
 ```
 
 ---
@@ -92,7 +118,8 @@ uvicorn app.main:app --reload --port 8080
 
 ### Test Local Server
 ```bash
-curl -X POST -F "image=@tests/sample_images/text_sample.jpg" http://localhost:8080/extract-text
+export OCR_API_URL="http://localhost:8080"
+curl -X POST -H "X-API-Key: $OCR_API_KEY" -F "image=@tests/sample_images/text_sample.jpg" $OCR_API_URL/v1/extract-text
 ```
 
 ### Run Tests
@@ -111,12 +138,17 @@ docker build -t ocr-api .
 
 ### Run Docker Container
 ```bash
-docker run -p 8080:8080 -e GOOGLE_APPLICATION_CREDENTIALS=/creds/key.json -v ~/.config/gcloud:/creds ocr-api
+docker run -p 8080:8080 \
+  -e API_KEY=$OCR_API_KEY \
+  -e GOOGLE_APPLICATION_CREDENTIALS=/creds/key.json \
+  -v ~/.config/gcloud:/creds \
+  ocr-api
 ```
 
 ### Test Docker Container
 ```bash
-curl -X POST -F "image=@tests/sample_images/text_sample.jpg" http://localhost:8080/extract-text
+export OCR_API_URL="http://localhost:8080"
+curl -X POST -H "X-API-Key: $OCR_API_KEY" -F "image=@tests/sample_images/text_sample.jpg" $OCR_API_URL/v1/extract-text
 ```
 
 ---
@@ -141,8 +173,10 @@ gcloud run deploy ocr-service \
   --platform managed \
   --region us-central1 \
   --allow-unauthenticated \
-  --memory 1Gi \
-  --timeout 60
+  --memory 2Gi \
+  --cpu 2 \
+  --timeout 60 \
+  --min-instances 1
 ```
 
 ### View Cloud Run Logs
@@ -157,54 +191,57 @@ gcloud run services describe ocr-service --region us-central1 --format="value(st
 
 ---
 
-## Useful GCloud Commands
-
-### Check Current Project
-```bash
-gcloud config get-value project
-```
-
-### List All Services
-```bash
-gcloud run services list
-```
-
-### View Service Details
-```bash
-gcloud run services describe ocr-service --region us-central1
-```
-
-### Delete Service (if needed)
-```bash
-gcloud run services delete ocr-service --region us-central1
-```
-
----
-
 ## Test Error Cases
 
 ### Invalid File Type
 ```bash
-curl -X POST -F "image=@README.md" https://ocr-service-243539984009.us-central1.run.app/extract-text
+curl -X POST -H "X-API-Key: $OCR_API_KEY" -F "image=@README.md" $OCR_API_URL/v1/extract-text
 ```
 
 ### Missing File
 ```bash
-curl -X POST https://ocr-service-243539984009.us-central1.run.app/extract-text
+curl -X POST -H "X-API-Key: $OCR_API_KEY" $OCR_API_URL/v1/extract-text
+```
+
+### Missing API Key (should fail)
+```bash
+curl -X POST -F "image=@tests/sample_images/text_sample.jpg" $OCR_API_URL/v1/extract-text
+```
+
+### Too Many Files in Batch (>10)
+```bash
+curl -X POST -H "X-API-Key: $OCR_API_KEY" \
+  -F "images=@tests/sample_images/text_sample.jpg" \
+  -F "images=@tests/sample_images/text_sample.jpg" \
+  -F "images=@tests/sample_images/text_sample.jpg" \
+  -F "images=@tests/sample_images/text_sample.jpg" \
+  -F "images=@tests/sample_images/text_sample.jpg" \
+  -F "images=@tests/sample_images/text_sample.jpg" \
+  -F "images=@tests/sample_images/text_sample.jpg" \
+  -F "images=@tests/sample_images/text_sample.jpg" \
+  -F "images=@tests/sample_images/text_sample.jpg" \
+  -F "images=@tests/sample_images/text_sample.jpg" \
+  -F "images=@tests/sample_images/text_sample.jpg" \
+  $OCR_API_URL/v1/extract-text/batch
 ```
 
 ---
 
-## Interactive API Documentation
+## Interactive Documentation
 
 ### Swagger UI
 ```bash
-open https://ocr-service-243539984009.us-central1.run.app/docs
+open $OCR_API_URL/docs
 ```
 
 ### ReDoc
 ```bash
-open https://ocr-service-243539984009.us-central1.run.app/redoc
+open $OCR_API_URL/redoc
+```
+
+### Web Dashboard
+```bash
+open $OCR_API_URL/web
 ```
 
 ---
@@ -212,5 +249,38 @@ open https://ocr-service-243539984009.us-central1.run.app/redoc
 ## One-Liner Test All Sample Images
 
 ```bash
-for img in tests/sample_images/*; do echo "=== Testing: $img ===" && curl -s -X POST -F "image=@$img" https://ocr-service-243539984009.us-central1.run.app/extract-text | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'Text: {d[\"text\"][:50]}... | Confidence: {d[\"confidence\"]}')" 2>/dev/null || echo "Failed"; done
+for img in tests/sample_images/*; do echo "=== Testing: $img ===" && curl -s -X POST -H "X-API-Key: $OCR_API_KEY" -F "image=@$img" $OCR_API_URL/v1/extract-text | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'Text: {d.get(\"text\", \"N/A\")[:50]}... | Confidence: {d.get(\"confidence\", \"N/A\")}')" 2>/dev/null || echo "Failed"; done
+```
+
+---
+
+## Copy-Paste Ready (Full URLs)
+
+If you don't want to set environment variables, use these directly:
+
+### Single Image
+```bash
+curl -X POST \
+  -H "X-API-Key: OCR_Secret_2026" \
+  -F "image=@tests/sample_images/text_sample.jpg" \
+  https://ocr-service-243539984009.us-central1.run.app/v1/extract-text
+```
+
+### Batch
+```bash
+curl -X POST \
+  -H "X-API-Key: OCR_Secret_2026" \
+  -F "images=@tests/sample_images/text_sample.jpg" \
+  -F "images=@tests/sample_images/test.png" \
+  https://ocr-service-243539984009.us-central1.run.app/v1/extract-text/batch
+```
+
+### Health Check
+```bash
+curl https://ocr-service-243539984009.us-central1.run.app/health
+```
+
+### Cache Stats
+```bash
+curl -H "X-API-Key: OCR_Secret_2026" https://ocr-service-243539984009.us-central1.run.app/v1/cache/stats
 ```

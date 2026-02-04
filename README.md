@@ -1,15 +1,23 @@
 # OCR Image Text Extraction API
 
-A serverless OCR API built with FastAPI and deployed on Google Cloud Run. Extracts text from JPG/JPEG images using Google Cloud Vision API as the primary OCR engine with Tesseract as a fallback.
+A production-ready serverless OCR API built with FastAPI and deployed on Google Cloud Run. Extracts text from images using Google Cloud Vision API (primary) with Tesseract OCR as fallback.
+
+**Version:** 1.2.0
 
 ## Features
 
 - **Dual OCR Engines**: Google Cloud Vision API (primary) + Tesseract OCR (fallback)
-- **Confidence Scores**: Returns confidence scores for extracted text
-- **Image Validation**: Validates file type, size, and integrity
-- **Processing Metrics**: Reports processing time in milliseconds
-- **Serverless Deployment**: Designed for Google Cloud Run
-- **API Documentation**: Auto-generated OpenAPI/Swagger docs
+- **Multiple Image Formats**: JPG, JPEG, PNG, GIF, WebP, BMP, TIFF
+- **Batch Processing**: Process up to 10 images in a single request
+- **Result Caching**: SHA256-based caching with Redis or in-memory storage
+- **Entity Extraction**: Automatically extracts emails, phone numbers, URLs, dates
+- **Image Metadata**: Returns dimensions, format, EXIF data, color analysis
+- **Quality Assessment**: Evaluates image quality and provides recommendations
+- **Rate Limiting**: Configurable rate limits per endpoint
+- **API Key Authentication**: Secure endpoints with X-API-Key header
+- **Security Scanning**: Magic byte validation, content scanning, input sanitization
+- **Web Dashboard**: Interactive frontend for testing the API
+- **Health Monitoring**: Dependency health checks for Vision API, Tesseract, Redis
 
 ## Project Structure
 
@@ -17,93 +25,133 @@ A serverless OCR API built with FastAPI and deployed on Google Cloud Run. Extrac
 .
 ├── app/
 │   ├── __init__.py
-│   ├── main.py              # FastAPI application
+│   ├── main.py                 # FastAPI application entry point
+│   ├── core/
+│   │   ├── config.py           # Configuration management
+│   │   ├── constants.py        # Application constants and enums
+│   │   ├── exceptions.py       # Custom exception classes
+│   │   ├── logging.py          # Structured logging setup
+│   │   └── security.py         # Security utilities (validation, sanitization)
 │   ├── routes/
-│   │   └── ocr.py           # OCR endpoint
+│   │   ├── __init__.py
+│   │   └── ocr.py              # OCR API endpoints
 │   ├── services/
-│   │   ├── ocr_service.py   # OCR orchestration
-│   │   ├── vision_api.py    # Google Cloud Vision
-│   │   └── tesseract.py     # Tesseract OCR
+│   │   ├── ocr_service.py      # OCR orchestration service
+│   │   ├── vision_api.py       # Google Cloud Vision integration
+│   │   └── tesseract.py        # Tesseract OCR integration
 │   ├── models/
-│   │   └── responses.py     # Pydantic models
+│   │   └── responses.py        # Pydantic response models
 │   └── utils/
-│       ├── validators.py    # Image validation
-│       └── image_utils.py   # Image preprocessing
+│       ├── validators.py       # Image validation utilities
+│       ├── image_utils.py      # Image preprocessing
+│       ├── text_processing.py  # Text cleanup and entity extraction
+│       ├── metadata.py         # Image metadata extraction
+│       └── cache_manager.py    # Redis/in-memory caching
+├── frontend/                   # Web dashboard (HTML/CSS/JS)
 ├── tests/
+│   ├── sample_images/          # Test images
 │   ├── test_ocr_endpoint.py
 │   └── test_validators.py
 ├── Dockerfile
 ├── requirements.txt
+├── commands.md                 # Testing commands reference
+├── documentation.md            # API documentation
 └── README.md
 ```
 
-## API Documentation
-
-### Endpoints
+## API Endpoints
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/` | API information |
-| GET | `/health` | Health check |
+| GET | `/` | API information and available endpoints |
+| GET | `/health` | Health check with dependency status |
 | GET | `/docs` | Swagger UI documentation |
-| POST | `/extract-text` | Extract text from image |
+| GET | `/redoc` | ReDoc documentation |
+| GET | `/web` | Interactive web dashboard |
+| POST | `/v1/extract-text` | Extract text from single image |
+| POST | `/v1/extract-text/batch` | Extract text from multiple images (up to 10) |
+| GET | `/v1/cache/stats` | Cache statistics |
+| DELETE | `/v1/cache` | Clear cache |
 
-### Extract Text Endpoint
+## Quick Start
 
+### Extract Text from Image
+
+```bash
+curl -X POST \
+  -H "X-API-Key: YOUR_API_KEY" \
+  -F "image=@test_image.jpg" \
+  https://your-service-url/v1/extract-text
 ```
-POST /extract-text
-Content-Type: multipart/form-data
+
+### Batch Processing
+
+```bash
+curl -X POST \
+  -H "X-API-Key: YOUR_API_KEY" \
+  -F "images=@image1.jpg" \
+  -F "images=@image2.png" \
+  https://your-service-url/v1/extract-text/batch
 ```
 
-**Request:**
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| image | File | Yes | JPG/JPEG image file (max 10MB) |
-
-**Success Response (200):**
+### Success Response
 
 ```json
 {
   "success": true,
   "text": "Extracted text content",
+  "text_formatted": "Cleaned and formatted text",
   "confidence": 0.95,
   "processing_time_ms": 1234,
-  "ocr_engine": "cloud_vision"
+  "ocr_engine": "cloud_vision",
+  "cached": false,
+  "text_stats": {
+    "word_count": 10,
+    "character_count": 50,
+    "character_count_no_spaces": 41,
+    "line_count": 2
+  },
+  "entities": {
+    "emails": ["test@example.com"],
+    "phone_numbers": [],
+    "urls": [],
+    "dates": []
+  },
+  "image_metadata": {
+    "width": 800,
+    "height": 600,
+    "format": "JPEG",
+    "mode": "RGB"
+  },
+  "quality_assessment": {
+    "score": 85,
+    "quality": "good",
+    "recommendations": []
+  }
 }
 ```
 
-**No Text Found Response (200):**
-
-```json
-{
-  "success": true,
-  "text": "",
-  "confidence": 0.0,
-  "processing_time_ms": 856,
-  "ocr_engine": "cloud_vision"
-}
-```
-
-### Error Responses
-
-| Status | Error Code | Description |
-|--------|------------|-------------|
-| 400 | INVALID_FILE_TYPE | File is not JPG/JPEG |
-| 400 | FILE_TOO_LARGE | File exceeds 10MB |
-| 400 | INVALID_IMAGE | Image file is corrupted |
-| 422 | MISSING_FILE | No file uploaded |
-| 500 | OCR_FAILED | Both OCR engines failed |
-
-**Error Response Format:**
+### Error Response
 
 ```json
 {
   "success": false,
   "error": "Human-readable error message",
-  "error_code": "MACHINE_READABLE_CODE"
+  "error_code": "ERROR_CODE"
 }
 ```
+
+## Error Codes
+
+| Status | Error Code | Description |
+|--------|------------|-------------|
+| 400 | INVALID_FILE_TYPE | Unsupported file format |
+| 400 | FILE_TOO_LARGE | File exceeds 10MB limit |
+| 400 | INVALID_IMAGE | Corrupted or invalid image |
+| 401 | UNAUTHORIZED | Missing or invalid API key |
+| 422 | MISSING_FILE | No file uploaded |
+| 429 | RATE_LIMIT_EXCEEDED | Rate limit exceeded |
+| 500 | OCR_FAILED | OCR processing failed |
 
 ## Local Development
 
@@ -112,26 +160,19 @@ Content-Type: multipart/form-data
 - Python 3.11+
 - Tesseract OCR installed
 - Google Cloud credentials (optional, for Vision API)
+- Redis (optional, for distributed caching)
 
 ### Setup
 
-1. **Clone the repository:**
+1. **Clone and setup virtual environment:**
    ```bash
    cd "Api Test"
-   ```
-
-2. **Create virtual environment:**
-   ```bash
    python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
-
-3. **Install dependencies:**
-   ```bash
+   source venv/bin/activate  # Windows: venv\Scripts\activate
    pip install -r requirements.txt
    ```
 
-4. **Install Tesseract (if not already installed):**
+2. **Install Tesseract:**
    ```bash
    # macOS
    brew install tesseract
@@ -139,170 +180,132 @@ Content-Type: multipart/form-data
    # Ubuntu/Debian
    sudo apt-get install tesseract-ocr tesseract-ocr-eng
 
-   # Windows
-   # Download installer from https://github.com/UB-Mannheim/tesseract/wiki
+   # Windows - Download from https://github.com/UB-Mannheim/tesseract/wiki
    ```
 
-5. **Set up Google Cloud credentials (optional):**
+3. **Configure environment (create .env file):**
+   ```env
+   # API Security
+   API_KEY=your-secret-api-key
+
+   # Google Cloud (optional)
+   GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account-key.json
+   GCP_PROJECT_ID=your-project-id
+
+   # Cache Configuration
+   CACHE_TYPE=in-memory  # or "redis"
+   REDIS_HOST=localhost
+   REDIS_PORT=6379
+   REDIS_PASSWORD=
+   REDIS_SSL=false
+
+   # Rate Limiting
+   RATE_LIMIT=60/minute
+   RATE_LIMIT_BATCH=10/minute
+
+   # Logging
+   LOG_LEVEL=INFO
+   DEBUG=false
+   ```
+
+4. **Run locally:**
    ```bash
-   cp .env.example .env
-   # Edit .env with your credentials
-   export GOOGLE_APPLICATION_CREDENTIALS=/path/to/your/service-account-key.json
+   uvicorn app.main:app --reload --port 8080
    ```
 
-### Run Locally
-
-```bash
-uvicorn app.main:app --reload --port 8080
-```
-
-The API will be available at `http://localhost:8080`.
-
-### Run Tests
-
-```bash
-pytest tests/ -v
-```
+5. **Run tests:**
+   ```bash
+   pytest tests/ -v
+   ```
 
 ## Docker
 
-### Build Image
+### Build and Run
 
 ```bash
+# Build
 docker build -t ocr-api .
-```
 
-### Run Container
+# Run with Tesseract only
+docker run -p 8080:8080 -e API_KEY=your-key ocr-api
 
-```bash
-# With Tesseract only
-docker run -p 8080:8080 ocr-api
-
-# With Google Cloud Vision API
+# Run with Vision API
 docker run -p 8080:8080 \
+  -e API_KEY=your-key \
   -e GOOGLE_APPLICATION_CREDENTIALS=/creds/key.json \
   -v ~/.config/gcloud/application_default_credentials.json:/creds/key.json:ro \
   ocr-api
 ```
 
-## Deployment to Google Cloud Run
-
-### Prerequisites
-
-1. [Google Cloud SDK](https://cloud.google.com/sdk/docs/install) installed
-2. A Google Cloud project with billing enabled
-
-### Setup GCP
+## Cloud Run Deployment
 
 ```bash
-# Set your project
+# Set project
 gcloud config set project YOUR_PROJECT_ID
 
-# Enable required APIs
-gcloud services enable run.googleapis.com
-gcloud services enable vision.googleapis.com
-gcloud services enable artifactregistry.googleapis.com
+# Enable APIs
+gcloud services enable run.googleapis.com vision.googleapis.com artifactregistry.googleapis.com
 
-# Create Artifact Registry repository
-gcloud artifacts repositories create ocr-api \
-    --repository-format=docker \
-    --location=us-central1
-```
-
-### Build and Deploy
-
-```bash
-# Authenticate Docker with GCP
-gcloud auth configure-docker us-central1-docker.pkg.dev
-
-# Build and push image
+# Build and deploy
 gcloud builds submit --tag us-central1-docker.pkg.dev/YOUR_PROJECT_ID/ocr-api/ocr-service
-
-# Deploy to Cloud Run
 gcloud run deploy ocr-service \
-    --image us-central1-docker.pkg.dev/YOUR_PROJECT_ID/ocr-api/ocr-service \
-    --platform managed \
-    --region us-central1 \
-    --allow-unauthenticated \
-    --memory 1Gi \
-    --cpu 1 \
-    --timeout 60 \
-    --max-instances 10
-```
-
-### Get Service URL
-
-```bash
-gcloud run services describe ocr-service --region us-central1 --format 'value(status.url)'
-```
-
-## Usage Examples
-
-### curl
-
-```bash
-# Local
-curl -X POST \
-  -F "image=@test_image.jpg" \
-  http://localhost:8080/extract-text
-
-# Cloud Run
-curl -X POST \
-  -F "image=@test_image.jpg" \
-  https://your-service-url/extract-text
-```
-
-### Python
-
-```python
-import requests
-
-url = "http://localhost:8080/extract-text"
-files = {"image": open("test_image.jpg", "rb")}
-response = requests.post(url, files=files)
-print(response.json())
-```
-
-### JavaScript (Node.js)
-
-```javascript
-const FormData = require('form-data');
-const fs = require('fs');
-const axios = require('axios');
-
-const form = new FormData();
-form.append('image', fs.createReadStream('test_image.jpg'));
-
-axios.post('http://localhost:8080/extract-text', form, {
-  headers: form.getHeaders()
-}).then(response => {
-  console.log(response.data);
-});
+  --image us-central1-docker.pkg.dev/YOUR_PROJECT_ID/ocr-api/ocr-service \
+  --platform managed \
+  --region us-central1 \
+  --allow-unauthenticated \
+  --memory 2Gi \
+  --cpu 2 \
+  --timeout 60 \
+  --min-instances 1
 ```
 
 ## Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `API_KEY` | - | API key for authentication (required in production) |
 | `GOOGLE_APPLICATION_CREDENTIALS` | - | Path to GCP service account key |
 | `GCP_PROJECT_ID` | - | Google Cloud project ID |
 | `USE_TESSERACT_ONLY` | `false` | Skip Vision API, use only Tesseract |
 | `MAX_FILE_SIZE` | `10485760` | Max upload size in bytes (10MB) |
+| `MAX_BATCH_SIZE` | `10` | Max images per batch request |
+| `CACHE_TYPE` | `in-memory` | Cache backend: `in-memory` or `redis` |
+| `CACHE_TTL_SECONDS` | `3600` | Cache entry TTL |
+| `REDIS_HOST` | `localhost` | Redis server host |
+| `REDIS_PORT` | `6379` | Redis server port |
+| `REDIS_PASSWORD` | - | Redis password |
+| `REDIS_SSL` | `false` | Enable SSL for Redis connection |
+| `RATE_LIMIT` | `60/minute` | Rate limit for single image endpoint |
+| `RATE_LIMIT_BATCH` | `10/minute` | Rate limit for batch endpoint |
 | `LOG_LEVEL` | `INFO` | Logging level |
-| `PORT` | `8080` | Server port |
+| `DEBUG` | `false` | Enable debug mode |
+| `CORS_ORIGINS` | `*` | Allowed CORS origins |
 
 ## Architecture
 
 ```
-┌─────────────┐     ┌──────────────────┐     ┌─────────────────────┐
-│   Client    │────▶│   Cloud Run      │────▶│  Google Cloud       │
-│  (curl/app) │     │   (FastAPI)      │     │  Vision API         │
-└─────────────┘     │                  │     └─────────────────────┘
-                    │  ┌────────────┐  │              │
-                    │  │ Tesseract  │  │◀─────────────┘
-                    │  │ (fallback) │  │     (if Vision fails)
-                    │  └────────────┘  │
-                    └──────────────────┘
+┌─────────────┐     ┌────────────────────────────────────────┐
+│   Client    │────▶│           Cloud Run (FastAPI)          │
+│  (curl/app) │     │                                        │
+└─────────────┘     │  ┌──────────┐    ┌─────────────────┐   │
+                    │  │   Rate   │    │   API Key       │   │
+                    │  │  Limiter │    │  Validation     │   │
+                    │  └────┬─────┘    └────────┬────────┘   │
+                    │       │                   │            │
+                    │       ▼                   ▼            │
+                    │  ┌─────────────────────────────────┐   │
+                    │  │        OCR Service              │   │
+                    │  │  ┌─────────┐   ┌────────────┐   │   │
+                    │  │  │ Vision  │   │ Tesseract  │   │   │
+                    │  │  │   API   │──▶│ (fallback) │   │   │
+                    │  │  └─────────┘   └────────────┘   │   │
+                    │  └──────────────┬──────────────────┘   │
+                    │                 │                      │
+                    │                 ▼                      │
+                    │  ┌─────────────────────────────────┐   │
+                    │  │    Redis / In-Memory Cache      │   │
+                    │  └─────────────────────────────────┘   │
+                    └────────────────────────────────────────┘
 ```
 
 ## License
