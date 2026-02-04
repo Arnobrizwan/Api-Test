@@ -27,7 +27,7 @@ from ..utils.validators import (
     validate_multiple_images,
     compute_image_hash,
 )
-from ..utils.cache import ocr_cache
+from ..utils.cache_manager import ocr_cache
 
 logger = get_logger(__name__)
 
@@ -271,6 +271,13 @@ async def extract_text_batch(
                 "processing_time_ms": result.total_processing_time_ms,
             }
         )
+
+        # Return 207 Multi-Status if there are mixed results (some successes, some failures)
+        if result.failed > 0 and result.successful > 0:
+            return JSONResponse(
+                status_code=207,
+                content=result.model_dump()
+            )
 
         return result
 

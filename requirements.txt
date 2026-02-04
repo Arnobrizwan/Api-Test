@@ -1,26 +1,29 @@
 # Core Framework
-fastapi==0.109.0
-uvicorn[standard]==0.27.0
-pydantic==2.5.3
-pydantic-settings==2.1.0
+fastapi==0.115.8
+uvicorn[standard]==0.34.0
+pydantic==2.10.6
+pydantic-settings==2.7.1
 
 # File Upload & Processing
-python-multipart==0.0.6
-Pillow==10.2.0
-pillow-heif==0.18.0
+python-multipart==0.0.20
+Pillow==11.1.0
+pillow-heif==0.21.0
 
 # OCR Engines
-google-cloud-vision==3.5.0
-pytesseract==0.3.10
+google-cloud-vision==3.9.0
+pytesseract==0.3.13
 
 # Rate Limiting & Caching
 slowapi==0.1.9
-cachetools==5.3.2
+cachetools==5.5.0
+redis==5.2.1
 
 # Configuration
-python-dotenv==1.0.0
+python-dotenv==1.0.1
 
 # Testing
-pytest==7.4.4
-pytest-asyncio==0.23.3
-httpx==0.26.0
+pytest==8.3.4
+pytest-asyncio==0.25.3
+httpx==0.28.1
+fakeredis==2.26.1
+gunicorn==23.0.0

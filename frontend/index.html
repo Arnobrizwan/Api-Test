@@ -1,0 +1,1148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OCR Text Extraction</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+        }
+
+        header h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 10px;
+        }
+
+        header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+
+        .main-card {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+            overflow: hidden;
+        }
+
+        .tabs {
+            display: flex;
+            background: #f8f9fa;
+            border-bottom: 1px solid #e9ecef;
+        }
+
+        .tab {
+            flex: 1;
+            padding: 18px;
+            text-align: center;
+            cursor: pointer;
+            font-weight: 500;
+            color: #6c757d;
+            transition: all 0.3s;
+            border-bottom: 3px solid transparent;
+        }
+
+        .tab:hover {
+            background: #fff;
+            color: #667eea;
+        }
+
+        .tab.active {
+            background: #fff;
+            color: #667eea;
+            border-bottom-color: #667eea;
+        }
+
+        .tab i {
+            margin-right: 8px;
+        }
+
+        .tab-content {
+            display: none;
+            padding: 30px;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .upload-zone {
+            border: 3px dashed #dee2e6;
+            border-radius: 15px;
+            padding: 60px 30px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            background: #f8f9fa;
+        }
+
+        .upload-zone:hover, .upload-zone.dragover {
+            border-color: #667eea;
+            background: #f0f3ff;
+        }
+
+        .upload-zone i {
+            font-size: 4rem;
+            color: #667eea;
+            margin-bottom: 20px;
+        }
+
+        .upload-zone h3 {
+            font-size: 1.3rem;
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .upload-zone p {
+            color: #6c757d;
+            font-size: 0.95rem;
+        }
+
+        .upload-zone input {
+            display: none;
+        }
+
+        .preview-section {
+            margin-top: 25px;
+            display: none;
+        }
+
+        .preview-section.active {
+            display: block;
+        }
+
+        .preview-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 25px;
+        }
+
+        @media (max-width: 768px) {
+            .preview-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .preview-card {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 20px;
+        }
+
+        .preview-card h4 {
+            font-size: 1rem;
+            color: #333;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .preview-card h4 i {
+            color: #667eea;
+        }
+
+        .image-preview {
+            width: 100%;
+            max-height: 300px;
+            object-fit: contain;
+            border-radius: 8px;
+            background: white;
+        }
+
+        .file-info {
+            margin-top: 15px;
+            font-size: 0.85rem;
+            color: #6c757d;
+        }
+
+        .file-info span {
+            display: block;
+            margin-bottom: 5px;
+        }
+
+        .options-section {
+            margin-top: 25px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 12px;
+        }
+
+        .options-section h4 {
+            margin-bottom: 15px;
+            color: #333;
+        }
+
+        .options-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+
+        .option-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .option-item input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            accent-color: #667eea;
+        }
+
+        .option-item label {
+            font-size: 0.95rem;
+            color: #495057;
+            cursor: pointer;
+        }
+
+        .btn {
+            padding: 14px 30px;
+            border: none;
+            border-radius: 10px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-secondary {
+            background: #e9ecef;
+            color: #495057;
+        }
+
+        .btn-secondary:hover {
+            background: #dee2e6;
+        }
+
+        .action-buttons {
+            margin-top: 25px;
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        .results-section {
+            margin-top: 30px;
+            display: none;
+        }
+
+        .results-section.active {
+            display: block;
+        }
+
+        .result-card {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .result-card h4 {
+            font-size: 1rem;
+            color: #333;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .result-card h4 .badge {
+            font-size: 0.75rem;
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-weight: 500;
+        }
+
+        .badge-success {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .badge-info {
+            background: #d1ecf1;
+            color: #0c5460;
+        }
+
+        .badge-warning {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .extracted-text {
+            background: white;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            padding: 20px;
+            font-size: 1rem;
+            line-height: 1.7;
+            white-space: pre-wrap;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 15px;
+        }
+
+        .stat-item {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .stat-item .value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #667eea;
+        }
+
+        .stat-item .label {
+            font-size: 0.8rem;
+            color: #6c757d;
+            margin-top: 5px;
+        }
+
+        .entities-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .entity-tag {
+            background: white;
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            border: 1px solid #e9ecef;
+        }
+
+        .entity-tag i {
+            color: #667eea;
+        }
+
+        .metadata-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+        }
+
+        .metadata-item {
+            background: white;
+            padding: 12px;
+            border-radius: 8px;
+        }
+
+        .metadata-item .key {
+            font-size: 0.75rem;
+            color: #6c757d;
+            text-transform: uppercase;
+        }
+
+        .metadata-item .value {
+            font-size: 0.95rem;
+            color: #333;
+            font-weight: 500;
+            margin-top: 3px;
+        }
+
+        .quality-bar {
+            height: 10px;
+            background: #e9ecef;
+            border-radius: 5px;
+            overflow: hidden;
+            margin-top: 10px;
+        }
+
+        .quality-fill {
+            height: 100%;
+            border-radius: 5px;
+            transition: width 0.5s ease;
+        }
+
+        .quality-good { background: #28a745; }
+        .quality-fair { background: #ffc107; }
+        .quality-poor { background: #dc3545; }
+
+        .recommendations {
+            margin-top: 15px;
+        }
+
+        .recommendation-item {
+            background: #fff3cd;
+            padding: 10px 15px;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .recommendation-item i {
+            color: #856404;
+        }
+
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .loading-overlay.active {
+            display: flex;
+        }
+
+        .loading-spinner {
+            background: white;
+            padding: 40px 60px;
+            border-radius: 15px;
+            text-align: center;
+        }
+
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .batch-files {
+            margin-top: 20px;
+        }
+
+        .batch-file-item {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            padding: 15px;
+            background: white;
+            border-radius: 8px;
+            margin-bottom: 10px;
+        }
+
+        .batch-file-item img {
+            width: 60px;
+            height: 60px;
+            object-fit: cover;
+            border-radius: 8px;
+        }
+
+        .batch-file-info {
+            flex: 1;
+        }
+
+        .batch-file-info .name {
+            font-weight: 500;
+            color: #333;
+        }
+
+        .batch-file-info .size {
+            font-size: 0.85rem;
+            color: #6c757d;
+        }
+
+        .batch-file-item .remove-btn {
+            background: #dc3545;
+            color: white;
+            border: none;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+
+        .copy-btn {
+            background: none;
+            border: 1px solid #dee2e6;
+            padding: 5px 12px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            color: #6c757d;
+            transition: all 0.3s;
+        }
+
+        .copy-btn:hover {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+
+        .api-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 20px;
+            background: #d4edda;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            font-size: 0.9rem;
+        }
+
+        .api-status.error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #28a745;
+        }
+
+        .api-status.error .status-dot {
+            background: #dc3545;
+        }
+
+        footer {
+            text-align: center;
+            color: white;
+            margin-top: 30px;
+            padding: 20px;
+            opacity: 0.8;
+        }
+
+        footer a {
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1><i class="fas fa-eye"></i> OCR Text Extraction</h1>
+            <p>Extract text from images using AI-powered OCR</p>
+        </header>
+
+        <div class="main-card">
+            <div class="api-status" id="apiStatus">
+                <span class="status-dot"></span>
+                <span>Checking API status...</span>
+            </div>
+
+            <div class="tabs">
+                <div class="tab active" data-tab="single">
+                    <i class="fas fa-image"></i> Single Image
+                </div>
+                <div class="tab" data-tab="batch">
+                    <i class="fas fa-images"></i> Batch Processing
+                </div>
+            </div>
+
+            <!-- Single Image Tab -->
+            <div class="tab-content active" id="single-tab">
+                <div class="upload-zone" id="singleUploadZone">
+                    <i class="fas fa-cloud-upload-alt"></i>
+                    <h3>Drop your image here</h3>
+                    <p>or click to browse • Supports JPG, PNG, GIF, WebP, BMP, TIFF</p>
+                    <input type="file" id="singleFileInput" accept="image/*">
+                </div>
+
+                <div class="preview-section" id="singlePreview">
+                    <div class="preview-grid">
+                        <div class="preview-card">
+                            <h4><i class="fas fa-image"></i> Image Preview</h4>
+                            <img id="previewImage" class="image-preview" src="" alt="Preview">
+                            <div class="file-info" id="fileInfo"></div>
+                        </div>
+                        <div class="preview-card">
+                            <h4><i class="fas fa-cog"></i> OCR Options</h4>
+                            <div class="options-grid">
+                                <div class="option-item">
+                                    <input type="checkbox" id="includeMetadata" checked>
+                                    <label for="includeMetadata">Include Metadata</label>
+                                </div>
+                                <div class="option-item">
+                                    <input type="checkbox" id="includeEntities" checked>
+                                    <label for="includeEntities">Extract Entities</label>
+                                </div>
+                                <div class="option-item">
+                                    <input type="checkbox" id="useCache" checked>
+                                    <label for="useCache">Use Cache</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="action-buttons">
+                        <button class="btn btn-primary" id="extractBtn">
+                            <i class="fas fa-magic"></i> Extract Text
+                        </button>
+                        <button class="btn btn-secondary" id="clearBtn">
+                            <i class="fas fa-trash"></i> Clear
+                        </button>
+                    </div>
+                </div>
+
+                <div class="results-section" id="singleResults">
+                    <div class="result-card">
+                        <h4>
+                            <span><i class="fas fa-file-alt"></i> Extracted Text</span>
+                            <div>
+                                <button class="copy-btn" onclick="copyText()">
+                                    <i class="fas fa-copy"></i> Copy
+                                </button>
+                                <span class="badge badge-success" id="engineBadge">cloud_vision</span>
+                            </div>
+                        </h4>
+                        <div class="extracted-text" id="extractedText"></div>
+                    </div>
+
+                    <div class="result-card">
+                        <h4><i class="fas fa-chart-bar"></i> Statistics</h4>
+                        <div class="stats-grid" id="statsGrid"></div>
+                    </div>
+
+                    <div class="result-card" id="entitiesCard">
+                        <h4><i class="fas fa-tags"></i> Extracted Entities</h4>
+                        <div class="entities-list" id="entitiesList"></div>
+                    </div>
+
+                    <div class="result-card" id="metadataCard">
+                        <h4><i class="fas fa-info-circle"></i> Image Metadata</h4>
+                        <div class="metadata-grid" id="metadataGrid"></div>
+                    </div>
+
+                    <div class="result-card" id="qualityCard">
+                        <h4>
+                            <span><i class="fas fa-star"></i> Quality Assessment</span>
+                            <span class="badge" id="qualityBadge">Good</span>
+                        </h4>
+                        <div class="quality-bar">
+                            <div class="quality-fill" id="qualityFill"></div>
+                        </div>
+                        <div class="recommendations" id="recommendations"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Batch Processing Tab -->
+            <div class="tab-content" id="batch-tab">
+                <div class="upload-zone" id="batchUploadZone">
+                    <i class="fas fa-layer-group"></i>
+                    <h3>Drop multiple images here</h3>
+                    <p>or click to browse • Up to 10 images at once</p>
+                    <input type="file" id="batchFileInput" accept="image/*" multiple>
+                </div>
+
+                <div class="batch-files" id="batchFiles"></div>
+
+                <div class="action-buttons" id="batchActions" style="display: none;">
+                    <button class="btn btn-primary" id="batchExtractBtn">
+                        <i class="fas fa-magic"></i> Process All Images
+                    </button>
+                    <button class="btn btn-secondary" id="batchClearBtn">
+                        <i class="fas fa-trash"></i> Clear All
+                    </button>
+                </div>
+
+                <div class="results-section" id="batchResults"></div>
+            </div>
+        </div>
+
+        <footer>
+            <p>Powered by Google Cloud Vision API & Tesseract OCR</p>
+            <p><a href="https://ocr-service-243539984009.us-central1.run.app/docs" target="_blank">API Documentation</a></p>
+        </footer>
+    </div>
+
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="loading-spinner">
+            <div class="spinner"></div>
+            <p id="loadingText">Processing image...</p>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'https://ocr-service-243539984009.us-central1.run.app';
+        let singleFile = null;
+        let batchFiles = [];
+
+        // Check API status on load
+        async function checkApiStatus() {
+            const statusEl = document.getElementById('apiStatus');
+            try {
+                const res = await fetch(`${API_BASE}/health`);
+                const data = await res.json();
+                statusEl.innerHTML = `
+                    <span class="status-dot"></span>
+                    <span>API Online • Version ${data.version}</span>
+                `;
+                statusEl.classList.remove('error');
+            } catch (e) {
+                statusEl.innerHTML = `
+                    <span class="status-dot"></span>
+                    <span>API Offline - Please check connection</span>
+                `;
+                statusEl.classList.add('error');
+            }
+        }
+        checkApiStatus();
+
+        // Tab switching
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                tab.classList.add('active');
+                document.getElementById(`${tab.dataset.tab}-tab`).classList.add('active');
+            });
+        });
+
+        // Single file upload
+        const singleUploadZone = document.getElementById('singleUploadZone');
+        const singleFileInput = document.getElementById('singleFileInput');
+
+        singleUploadZone.addEventListener('click', () => singleFileInput.click());
+        singleUploadZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            singleUploadZone.classList.add('dragover');
+        });
+        singleUploadZone.addEventListener('dragleave', () => {
+            singleUploadZone.classList.remove('dragover');
+        });
+        singleUploadZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            singleUploadZone.classList.remove('dragover');
+            if (e.dataTransfer.files.length) {
+                handleSingleFile(e.dataTransfer.files[0]);
+            }
+        });
+        singleFileInput.addEventListener('change', (e) => {
+            if (e.target.files.length) {
+                handleSingleFile(e.target.files[0]);
+            }
+        });
+
+        function handleSingleFile(file) {
+            singleFile = file;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                document.getElementById('previewImage').src = e.target.result;
+                document.getElementById('fileInfo').innerHTML = `
+                    <span><strong>Name:</strong> ${file.name}</span>
+                    <span><strong>Size:</strong> ${formatFileSize(file.size)}</span>
+                    <span><strong>Type:</strong> ${file.type}</span>
+                `;
+                document.getElementById('singlePreview').classList.add('active');
+                document.getElementById('singleResults').classList.remove('active');
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function formatFileSize(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+        }
+
+        // Extract text
+        document.getElementById('extractBtn').addEventListener('click', async () => {
+            if (!singleFile) return;
+
+            const formData = new FormData();
+            formData.append('image', singleFile);
+
+            const includeMetadata = document.getElementById('includeMetadata').checked;
+            const includeEntities = document.getElementById('includeEntities').checked;
+            const useCache = document.getElementById('useCache').checked;
+
+            showLoading('Extracting text from image...');
+
+            try {
+                const res = await fetch(
+                    `${API_BASE}/extract-text?include_metadata=${includeMetadata}&include_entities=${includeEntities}&use_cache=${useCache}`,
+                    { method: 'POST', body: formData }
+                );
+                const data = await res.json();
+                hideLoading();
+
+                if (data.success) {
+                    displayResults(data);
+                } else {
+                    alert(`Error: ${data.error}`);
+                }
+            } catch (e) {
+                hideLoading();
+                alert('Failed to connect to API: ' + e.message);
+            }
+        });
+
+        function displayResults(data) {
+            document.getElementById('singleResults').classList.add('active');
+
+            // Extracted text
+            document.getElementById('extractedText').textContent = data.text || '(No text found)';
+            document.getElementById('engineBadge').textContent = data.ocr_engine + (data.cached ? ' (cached)' : '');
+
+            // Stats
+            const stats = data.text_stats || {};
+            document.getElementById('statsGrid').innerHTML = `
+                <div class="stat-item">
+                    <div class="value">${(data.confidence * 100).toFixed(1)}%</div>
+                    <div class="label">Confidence</div>
+                </div>
+                <div class="stat-item">
+                    <div class="value">${stats.word_count || 0}</div>
+                    <div class="label">Words</div>
+                </div>
+                <div class="stat-item">
+                    <div class="value">${stats.character_count || 0}</div>
+                    <div class="label">Characters</div>
+                </div>
+                <div class="stat-item">
+                    <div class="value">${stats.line_count || 0}</div>
+                    <div class="label">Lines</div>
+                </div>
+                <div class="stat-item">
+                    <div class="value">${data.processing_time_ms}ms</div>
+                    <div class="label">Processing Time</div>
+                </div>
+            `;
+
+            // Entities
+            const entities = data.entities || {};
+            const entitiesCard = document.getElementById('entitiesCard');
+            const entitiesList = document.getElementById('entitiesList');
+
+            let entitiesHtml = '';
+            if (entities.emails?.length) {
+                entities.emails.forEach(e => {
+                    entitiesHtml += `<span class="entity-tag"><i class="fas fa-envelope"></i> ${e}</span>`;
+                });
+            }
+            if (entities.phone_numbers?.length) {
+                entities.phone_numbers.forEach(p => {
+                    entitiesHtml += `<span class="entity-tag"><i class="fas fa-phone"></i> ${p}</span>`;
+                });
+            }
+            if (entities.urls?.length) {
+                entities.urls.forEach(u => {
+                    entitiesHtml += `<span class="entity-tag"><i class="fas fa-link"></i> ${u}</span>`;
+                });
+            }
+            if (entities.dates?.length) {
+                entities.dates.forEach(d => {
+                    entitiesHtml += `<span class="entity-tag"><i class="fas fa-calendar"></i> ${d}</span>`;
+                });
+            }
+
+            if (entitiesHtml) {
+                entitiesList.innerHTML = entitiesHtml;
+                entitiesCard.style.display = 'block';
+            } else {
+                entitiesCard.style.display = 'none';
+            }
+
+            // Metadata
+            const metadata = data.image_metadata;
+            const metadataCard = document.getElementById('metadataCard');
+
+            if (metadata) {
+                document.getElementById('metadataGrid').innerHTML = `
+                    <div class="metadata-item">
+                        <div class="key">Dimensions</div>
+                        <div class="value">${metadata.width} × ${metadata.height}</div>
+                    </div>
+                    <div class="metadata-item">
+                        <div class="key">Format</div>
+                        <div class="value">${metadata.format || 'Unknown'}</div>
+                    </div>
+                    <div class="metadata-item">
+                        <div class="key">Color Mode</div>
+                        <div class="value">${metadata.mode || 'Unknown'}</div>
+                    </div>
+                    <div class="metadata-item">
+                        <div class="key">Aspect Ratio</div>
+                        <div class="value">${metadata.aspect_ratio?.toFixed(2) || 'N/A'}</div>
+                    </div>
+                    <div class="metadata-item">
+                        <div class="key">Megapixels</div>
+                        <div class="value">${metadata.megapixels?.toFixed(2) || 'N/A'} MP</div>
+                    </div>
+                    <div class="metadata-item">
+                        <div class="key">Avg Color</div>
+                        <div class="value" style="display:flex;align-items:center;gap:8px;">
+                            <span style="width:20px;height:20px;border-radius:4px;background:${metadata.color_info?.average_color_hex || '#ccc'}"></span>
+                            ${metadata.color_info?.average_color_hex || 'N/A'}
+                        </div>
+                    </div>
+                `;
+                metadataCard.style.display = 'block';
+            } else {
+                metadataCard.style.display = 'none';
+            }
+
+            // Quality
+            const quality = data.quality_assessment;
+            const qualityCard = document.getElementById('qualityCard');
+
+            if (quality) {
+                const badge = document.getElementById('qualityBadge');
+                badge.textContent = quality.quality.charAt(0).toUpperCase() + quality.quality.slice(1);
+                badge.className = 'badge badge-' + (quality.quality === 'good' ? 'success' : quality.quality === 'fair' ? 'warning' : 'error');
+
+                const fill = document.getElementById('qualityFill');
+                fill.style.width = quality.score + '%';
+                fill.className = 'quality-fill quality-' + quality.quality;
+
+                const recs = document.getElementById('recommendations');
+                if (quality.recommendations?.length) {
+                    recs.innerHTML = quality.recommendations.map(r =>
+                        `<div class="recommendation-item"><i class="fas fa-exclamation-triangle"></i> ${r}</div>`
+                    ).join('');
+                } else {
+                    recs.innerHTML = '<div class="recommendation-item" style="background:#d4edda;"><i class="fas fa-check" style="color:#155724;"></i> Image quality is optimal for OCR</div>';
+                }
+                qualityCard.style.display = 'block';
+            } else {
+                qualityCard.style.display = 'none';
+            }
+        }
+
+        function copyText() {
+            const text = document.getElementById('extractedText').textContent;
+            navigator.clipboard.writeText(text).then(() => {
+                alert('Text copied to clipboard!');
+            });
+        }
+
+        // Clear button
+        document.getElementById('clearBtn').addEventListener('click', () => {
+            singleFile = null;
+            document.getElementById('singlePreview').classList.remove('active');
+            document.getElementById('singleResults').classList.remove('active');
+            document.getElementById('singleFileInput').value = '';
+        });
+
+        // Batch upload
+        const batchUploadZone = document.getElementById('batchUploadZone');
+        const batchFileInput = document.getElementById('batchFileInput');
+
+        batchUploadZone.addEventListener('click', () => batchFileInput.click());
+        batchUploadZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            batchUploadZone.classList.add('dragover');
+        });
+        batchUploadZone.addEventListener('dragleave', () => {
+            batchUploadZone.classList.remove('dragover');
+        });
+        batchUploadZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            batchUploadZone.classList.remove('dragover');
+            handleBatchFiles(e.dataTransfer.files);
+        });
+        batchFileInput.addEventListener('change', (e) => {
+            handleBatchFiles(e.target.files);
+        });
+
+        function handleBatchFiles(files) {
+            for (let file of files) {
+                if (batchFiles.length >= 10) {
+                    alert('Maximum 10 files allowed');
+                    break;
+                }
+                if (!batchFiles.find(f => f.name === file.name)) {
+                    batchFiles.push(file);
+                }
+            }
+            renderBatchFiles();
+        }
+
+        function renderBatchFiles() {
+            const container = document.getElementById('batchFiles');
+            if (batchFiles.length === 0) {
+                container.innerHTML = '';
+                document.getElementById('batchActions').style.display = 'none';
+                return;
+            }
+
+            document.getElementById('batchActions').style.display = 'flex';
+
+            container.innerHTML = batchFiles.map((file, index) => {
+                const url = URL.createObjectURL(file);
+                return `
+                    <div class="batch-file-item">
+                        <img src="${url}" alt="${file.name}">
+                        <div class="batch-file-info">
+                            <div class="name">${file.name}</div>
+                            <div class="size">${formatFileSize(file.size)}</div>
+                        </div>
+                        <button class="remove-btn" onclick="removeBatchFile(${index})">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function removeBatchFile(index) {
+            batchFiles.splice(index, 1);
+            renderBatchFiles();
+        }
+
+        document.getElementById('batchClearBtn').addEventListener('click', () => {
+            batchFiles = [];
+            renderBatchFiles();
+            document.getElementById('batchResults').innerHTML = '';
+            document.getElementById('batchResults').classList.remove('active');
+        });
+
+        document.getElementById('batchExtractBtn').addEventListener('click', async () => {
+            if (batchFiles.length === 0) return;
+
+            const formData = new FormData();
+            batchFiles.forEach(file => {
+                formData.append('images', file);
+            });
+
+            showLoading(`Processing ${batchFiles.length} images...`);
+
+            try {
+                const res = await fetch(`${API_BASE}/extract-text/batch`, {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await res.json();
+                hideLoading();
+
+                displayBatchResults(data);
+            } catch (e) {
+                hideLoading();
+                alert('Failed to process batch: ' + e.message);
+            }
+        });
+
+        function displayBatchResults(data) {
+            const container = document.getElementById('batchResults');
+            container.classList.add('active');
+
+            let html = `
+                <div class="result-card">
+                    <h4><i class="fas fa-chart-pie"></i> Batch Summary</h4>
+                    <div class="stats-grid">
+                        <div class="stat-item">
+                            <div class="value">${data.total_files}</div>
+                            <div class="label">Total Files</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="value" style="color:#28a745">${data.successful}</div>
+                            <div class="label">Successful</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="value" style="color:#dc3545">${data.failed}</div>
+                            <div class="label">Failed</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="value">${data.total_processing_time_ms}ms</div>
+                            <div class="label">Total Time</div>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            data.results.forEach((result, index) => {
+                html += `
+                    <div class="result-card">
+                        <h4>
+                            <span><i class="fas fa-file-image"></i> ${result.filename}</span>
+                            <span class="badge ${result.success ? 'badge-success' : 'badge-warning'}">
+                                ${result.success ? 'Success' : 'Failed'}
+                            </span>
+                        </h4>
+                        ${result.success ? `
+                            <div class="extracted-text" style="max-height:150px;">${result.text || '(No text found)'}</div>
+                            <div style="margin-top:10px;font-size:0.85rem;color:#6c757d;">
+                                Confidence: ${(result.confidence * 100).toFixed(1)}% •
+                                Engine: ${result.ocr_engine} •
+                                Time: ${result.processing_time_ms}ms
+                                ${result.cached ? '• Cached' : ''}
+                            </div>
+                        ` : `
+                            <div style="color:#dc3545;">${result.error}</div>
+                        `}
+                    </div>
+                `;
+            });
+
+            container.innerHTML = html;
+        }
+
+        function showLoading(text) {
+            document.getElementById('loadingText').textContent = text;
+            document.getElementById('loadingOverlay').classList.add('active');
+        }
+
+        function hideLoading() {
+            document.getElementById('loadingOverlay').classList.remove('active');
+        }
+    </script>
+</body>
+</html>

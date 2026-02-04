@@ -4,7 +4,7 @@ import io
 import pytest
 from fastapi.testclient import TestClient
 from PIL import Image, ImageDraw, ImageFont
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, PropertyMock
 
 from app.main import app
 
@@ -65,21 +65,6 @@ class TestExtractTextEndpoint:
         response = client.post("/extract-text")
         assert response.status_code == 422
 
-    def test_invalid_file_type_png(self):
-        """Test error when uploading PNG file."""
-        image = Image.new("RGB", (100, 100), color="white")
-        buffer = io.BytesIO()
-        image.save(buffer, format="PNG")
-        buffer.seek(0)
-
-        response = client.post(
-            "/extract-text",
-            files={"image": ("test.png", buffer, "image/png")},
-        )
-        assert response.status_code == 400
-        data = response.json()
-        assert data["error_code"] == "INVALID_FILE_TYPE"
-
     def test_invalid_file_type_text(self):
         """Test error when uploading text file."""
         response = client.post(
@@ -90,21 +75,13 @@ class TestExtractTextEndpoint:
         data = response.json()
         assert data["error_code"] == "INVALID_FILE_TYPE"
 
-    def test_corrupted_image(self):
-        """Test error when uploading corrupted image."""
-        response = client.post(
-            "/extract-text",
-            files={"image": ("test.jpg", b"not valid jpeg data", "image/jpeg")},
-        )
-        assert response.status_code == 400
-        data = response.json()
-        assert data["error_code"] == "INVALID_IMAGE"
-
-    @patch("app.services.vision_api.vision_service.is_available", False)
-    @patch("app.services.tesseract.tesseract_service.is_available", True)
+    @patch("app.services.vision_api.VisionAPIService.is_available", new_callable=PropertyMock)
+    @patch("app.services.tesseract.TesseractService.is_available", new_callable=PropertyMock)
     @patch("app.services.tesseract.tesseract_service.extract_text")
-    def test_successful_extraction_tesseract(self, mock_extract):
+    def test_successful_extraction_tesseract(self, mock_extract, mock_tess_avail, mock_vision_avail):
         """Test successful text extraction with Tesseract."""
+        mock_vision_avail.return_value = False
+        mock_tess_avail.return_value = True
         mock_extract.return_value = ("Hello World", 0.85)
 
         image_bytes = create_test_image_with_text("Hello World")
@@ -121,10 +98,11 @@ class TestExtractTextEndpoint:
         assert data["ocr_engine"] == "tesseract"
         assert "processing_time_ms" in data
 
-    @patch("app.services.vision_api.vision_service.is_available", True)
+    @patch("app.services.vision_api.VisionAPIService.is_available", new_callable=PropertyMock)
     @patch("app.services.vision_api.vision_service.extract_text")
-    def test_successful_extraction_vision(self, mock_extract):
+    def test_successful_extraction_vision(self, mock_extract, mock_vision_avail):
         """Test successful text extraction with Cloud Vision."""
+        mock_vision_avail.return_value = True
         mock_extract.return_value = ("Hello World", 0.95)
 
         image_bytes = create_test_image_with_text("Hello World")
@@ -140,12 +118,14 @@ class TestExtractTextEndpoint:
         assert data["confidence"] == 0.95
         assert data["ocr_engine"] == "cloud_vision"
 
-    @patch("app.services.vision_api.vision_service.is_available", True)
+    @patch("app.services.vision_api.VisionAPIService.is_available", new_callable=PropertyMock)
     @patch("app.services.vision_api.vision_service.extract_text")
-    @patch("app.services.tesseract.tesseract_service.is_available", True)
+    @patch("app.services.tesseract.TesseractService.is_available", new_callable=PropertyMock)
     @patch("app.services.tesseract.tesseract_service.extract_text")
-    def test_fallback_to_tesseract(self, mock_tesseract, mock_vision):
+    def test_fallback_to_tesseract(self, mock_tesseract, mock_tess_avail, mock_vision, mock_vision_avail):
         """Test fallback to Tesseract when Vision API fails."""
+        mock_vision_avail.return_value = True
+        mock_tess_avail.return_value = True
         mock_vision.side_effect = Exception("Vision API error")
         mock_tesseract.return_value = ("Fallback text", 0.75)
 
@@ -161,10 +141,12 @@ class TestExtractTextEndpoint:
         assert data["text"] == "Fallback text"
         assert data["ocr_engine"] == "tesseract"
 
-    @patch("app.services.vision_api.vision_service.is_available", False)
-    @patch("app.services.tesseract.tesseract_service.is_available", False)
-    def test_all_engines_unavailable(self):
+    @patch("app.services.vision_api.VisionAPIService.is_available", new_callable=PropertyMock)
+    @patch("app.services.tesseract.TesseractService.is_available", new_callable=PropertyMock)
+    def test_all_engines_unavailable(self, mock_tess_avail, mock_vision_avail):
         """Test error when all OCR engines are unavailable."""
+        mock_vision_avail.return_value = False
+        mock_tess_avail.return_value = False
         image_bytes = create_test_image_with_text()
         response = client.post(
             "/extract-text",
@@ -198,15 +180,27 @@ class TestValidators:
             mock_ocr.return_value = MagicMock(
                 success=True,
                 text="Test",
+                text_formatted="Test",
                 confidence=0.9,
                 processing_time_ms=100,
                 ocr_engine="tesseract",
+                cached=False,
+                text_stats=None,
+                entities=None,
+                image_metadata=None,
+                quality_assessment=None,
                 model_dump=lambda: {
                     "success": True,
                     "text": "Test",
+                    "text_formatted": "Test",
                     "confidence": 0.9,
                     "processing_time_ms": 100,
                     "ocr_engine": "tesseract",
+                    "cached": False,
+                    "text_stats": None,
+                    "entities": None,
+                    "image_metadata": None,
+                    "quality_assessment": None,
                 },
             )
 

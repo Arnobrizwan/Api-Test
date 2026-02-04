@@ -7,7 +7,7 @@ steps:
     args:
       - 'build'
       - '-t'
-      - 'us-central1-docker.pkg.dev/$PROJECT_ID/ocr-api/ocr-service:$COMMIT_SHA'
+      - 'us-central1-docker.pkg.dev/$PROJECT_ID/ocr-api/ocr-service:${_COMMIT_SHA}'
       - '-t'
       - 'us-central1-docker.pkg.dev/$PROJECT_ID/ocr-api/ocr-service:latest'
       - '.'
@@ -16,7 +16,7 @@ steps:
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'push'
-      - 'us-central1-docker.pkg.dev/$PROJECT_ID/ocr-api/ocr-service:$COMMIT_SHA'
+      - 'us-central1-docker.pkg.dev/$PROJECT_ID/ocr-api/ocr-service:${_COMMIT_SHA}'
 
   - name: 'gcr.io/cloud-builders/docker'
     args:
@@ -31,24 +31,37 @@ steps:
       - 'deploy'
       - 'ocr-service'
       - '--image'
-      - 'us-central1-docker.pkg.dev/$PROJECT_ID/ocr-api/ocr-service:$COMMIT_SHA'
+      - 'us-central1-docker.pkg.dev/$PROJECT_ID/ocr-api/ocr-service:${_COMMIT_SHA}'
       - '--region'
       - 'us-central1'
       - '--platform'
       - 'managed'
       - '--allow-unauthenticated'
       - '--memory'
-      - '1Gi'
+      - '2Gi'
       - '--cpu'
-      - '1'
+      - '2'
       - '--timeout'
-      - '60'
+      - '300'
+      - '--concurrency'
+      - '80'
+      - '--min-instances'
+      - '1'
+      - '--no-cpu-throttling'
       - '--max-instances'
       - '10'
+      - '--set-env-vars'
+      - 'CACHE_TYPE=redis,REDIS_HOST=casual-muskrat-63424.upstash.io,REDIS_PORT=6379'
+      # Note: Set REDIS_PASSWORD directly in Cloud Run Console or via Secret Manager for security.
+      # - '--vpc-connector'
+      # - 'projects/$PROJECT_ID/locations/us-central1/connectors/YOUR_CONNECTOR'
 
 images:
-  - 'us-central1-docker.pkg.dev/$PROJECT_ID/ocr-api/ocr-service:$COMMIT_SHA'
+  - 'us-central1-docker.pkg.dev/$PROJECT_ID/ocr-api/ocr-service:${_COMMIT_SHA}'
   - 'us-central1-docker.pkg.dev/$PROJECT_ID/ocr-api/ocr-service:latest'
+
+substitutions:
+  _COMMIT_SHA: 'manual'
 
 options:
   logging: CLOUD_LOGGING_ONLY

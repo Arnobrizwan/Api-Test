@@ -1,6 +1,6 @@
 """Pydantic models for API responses."""
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional, List, Dict, Any
 
 
@@ -113,9 +113,8 @@ class HealthResponse(BaseModel):
 class CacheStatsResponse(BaseModel):
     """Response model for cache statistics."""
 
-    size: int = Field(description="Current number of cached items")
-    max_size: int = Field(description="Maximum cache size")
-    ttl_seconds: int = Field(description="Cache TTL in seconds")
-    hits: int = Field(description="Number of cache hits")
-    misses: int = Field(description="Number of cache misses")
-    hit_rate_percent: float = Field(description="Cache hit rate percentage")
+    type: str = Field(description="Cache type: 'in-memory' or 'redis'")
+    status: Optional[str] = Field(default=None, description="Connection status for Redis")
+
+    model_config = ConfigDict(extra="allow")
+

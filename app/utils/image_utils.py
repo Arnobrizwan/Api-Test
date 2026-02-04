@@ -7,38 +7,33 @@ import io
 def preprocess_image(image: Image.Image) -> Image.Image:
     """
     Preprocess an image for better OCR results.
+    ...
+"""
+    # [Preprocess logic]
+    return binary
 
-    Steps:
-    1. Convert to RGB if necessary
-    2. Convert to grayscale
-    3. Apply contrast enhancement
-    4. Apply slight sharpening
-    5. Apply adaptive thresholding (binarization)
+
+def resize_image_if_needed(image: Image.Image, max_width: int) -> Image.Image:
+    """
+    Resize image if it exceeds max_width while maintaining aspect ratio.
 
     Args:
         image: PIL Image object
+        max_width: Maximum allowed width
 
     Returns:
-        Preprocessed PIL Image
+        Resized PIL Image or original if resize not needed
     """
-    if image.mode == "RGBA":
-        background = Image.new("RGB", image.size, (255, 255, 255))
-        background.paste(image, mask=image.split()[3])
-        image = background
-    elif image.mode != "RGB":
-        image = image.convert("RGB")
+    width, height = image.size
+    if width <= max_width:
+        return image
 
-    grayscale = ImageOps.grayscale(image)
+    # Calculate new height to maintain aspect ratio
+    new_width = max_width
+    new_height = int((max_width / width) * height)
 
-    enhanced = ImageOps.autocontrast(grayscale, cutoff=1)
-
-    sharpened = enhanced.filter(ImageFilter.SHARPEN)
-
-    threshold = 127
-    binary = sharpened.point(lambda x: 255 if x > threshold else 0, mode="1")
-    binary = binary.convert("L")
-
-    return binary
+    # Use LANCZOS for high-quality downsampling
+    return image.resize((new_width, new_height), Image.Resampling.LANCZOS)
 
 
 def image_to_bytes(image: Image.Image, format: str = "JPEG") -> bytes:

@@ -4,7 +4,7 @@ from .validators import validate_image_file, validate_multiple_images, compute_i
 from .image_utils import preprocess_image
 from .text_processing import cleanup_text, format_as_paragraphs
 from .metadata import extract_image_metadata, get_image_quality_score
-from .cache import ocr_cache
+from .cache_manager import ocr_cache
 
 __all__ = [
     "validate_image_file",

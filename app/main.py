@@ -330,7 +330,20 @@ async def health_check():
     return HealthResponse(status="healthy", version=settings.app_version)
 
 
-# Include OCR routes
+# Include OCR routes with v1 versioning
 from .routes import ocr_router
 
-app.include_router(ocr_router)
+app.include_router(ocr_router, prefix="/v1")
+app.include_router(ocr_router) # Keep root prefix for backward compatibility during transition
+
+# Serve frontend static files last
+from fastapi.staticfiles import StaticFiles
+import os
+
+# Get the absolute path to the frontend directory
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(current_dir)
+frontend_path = os.path.join(project_root, "frontend")
+
+if os.path.exists(frontend_path):
+    app.mount("/web", StaticFiles(directory=frontend_path, html=True), name="frontend")

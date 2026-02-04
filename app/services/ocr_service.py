@@ -25,7 +25,7 @@ from ..models.responses import (
     ImageMetadata,
     QualityAssessment,
 )
-from ..utils.cache import ocr_cache
+from ..utils.cache_manager import ocr_cache
 from ..utils.text_processing import (
     cleanup_text,
     format_as_paragraphs,
@@ -37,6 +37,7 @@ from ..utils.text_processing import (
     get_character_count,
 )
 from ..utils.metadata import extract_image_metadata, get_image_quality_score
+from ..utils.image_utils import resize_image_if_needed, image_to_bytes
 
 logger = get_logger(__name__)
 
@@ -246,6 +247,14 @@ class OCRService:
                 logger.debug(f"Cache hit for key: {cache_key[:16]}...")
                 return OCRResponse(**cached_result)
 
+        # Auto-resize if needed (Optimization)
+        original_size = image.size
+        image = resize_image_if_needed(image, settings.max_image_width)
+        if image.size != original_size:
+            logger.info(f"Image resized from {original_size} to {image.size}")
+            # Update bytes for Cloud Vision API
+            image_content = image_to_bytes(image)
+
         # Perform OCR
         text, confidence, engine_used = self._perform_ocr(image_content, image)
 
@@ -277,16 +286,29 @@ class OCRService:
 
         # Cache result
         if self.enable_cache and cache_key:
-            cache_data = result.copy()
-            cache_data.pop("processing_time_ms")
-            cache_data.pop("cached")
+            # Deep copy and convert Pydantic models to dicts for JSON serialization
+            cache_data = {
+                "success": result["success"],
+                "text": result["text"],
+                "text_formatted": result["text_formatted"],
+                "confidence": result["confidence"],
+                "ocr_engine": result["ocr_engine"],
+                "text_stats": result["text_stats"].model_dump() if result["text_stats"] else None,
+                "entities": result["entities"].model_dump() if result["entities"] else None,
+                "image_metadata": result["image_metadata"].model_dump() if result["image_metadata"] else None,
+                "quality_assessment": result["quality_assessment"].model_dump() if result["quality_assessment"] else None,
+            }
             ocr_cache.set(cache_key, cache_data)
             logger.debug(f"Cached result for key: {cache_key[:16]}...")
 
         logger.info(
-            f"OCR completed: engine={engine_used.value if engine_used else 'none'}, "
-            f"text_length={len(text)}, confidence={confidence:.4f}, "
-            f"time={processing_time_ms}ms"
+            f"OCR completed: engine={engine_used.value if engine_used else 'none'}",
+            extra={
+                "engine": engine_used.value if engine_used else "none",
+                "is_fallback": engine_used == OCREngine.TESSERACT and not self.use_tesseract_only,
+                "confidence": confidence,
+                "processing_time_ms": processing_time_ms
+            }
         )
 
         return OCRResponse(**result)

@@ -9,7 +9,7 @@ from functools import lru_cache
 from typing import Optional
 
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -18,6 +18,12 @@ class Settings(BaseSettings):
     All settings can be overridden via environment variables.
     Environment variables take precedence over default values.
     """
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False
+    )
 
     # Application
     app_name: str = Field(default="OCR Image Text Extraction API")
@@ -40,8 +46,18 @@ class Settings(BaseSettings):
 
     # Caching
     enable_cache: bool = Field(default=True)
-    cache_max_size: int = Field(default=100)
+    cache_type: str = Field(default="in-memory")  # "in-memory" or "redis"
+    cache_max_size: int = Field(default=100)  # For in-memory cache
     cache_ttl_seconds: int = Field(default=3600)
+
+    # Optimization
+    max_image_width: int = Field(default=2000)  # Auto-resize if wider than this
+
+    # Redis Settings
+    redis_host: str = Field(default="localhost")
+    redis_port: int = Field(default=6379)
+    redis_db: int = Field(default=0)
+    redis_password: Optional[str] = Field(default=None)
 
     # Security
     allowed_hosts: str = Field(default="*")
@@ -81,11 +97,6 @@ class Settings(BaseSettings):
         if v > 86400:  # 24 hours
             raise ValueError("cache_ttl_seconds must not exceed 86400 (24 hours)")
         return v
-
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        case_sensitive = False
 
 
 @lru_cache()

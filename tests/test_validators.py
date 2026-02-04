@@ -5,7 +5,8 @@ import pytest
 from PIL import Image
 from unittest.mock import AsyncMock, MagicMock
 
-from app.utils.validators import validate_image_file, ValidationError
+from app.utils.validators import validate_image_file
+from app.core.exceptions import ValidationError
 
 
 class MockUploadFile:
@@ -74,27 +75,26 @@ class TestValidateImageFile:
         assert exc_info.value.error_code == "MISSING_FILE"
 
     @pytest.mark.asyncio
-    async def test_invalid_extension_png(self):
-        """Test validation fails for PNG extension."""
-        content = create_valid_png()
-        file = MockUploadFile("test.png", content, "image/png")
+    async def test_invalid_extension_pdf(self):
+        """Test validation fails for PDF extension."""
+        file = MockUploadFile("test.pdf", b"content", "application/pdf")
         with pytest.raises(ValidationError) as exc_info:
             await validate_image_file(file)
         assert exc_info.value.error_code == "INVALID_FILE_TYPE"
 
     @pytest.mark.asyncio
-    async def test_invalid_extension_gif(self):
-        """Test validation fails for GIF extension."""
-        file = MockUploadFile("test.gif", b"content", "image/gif")
+    async def test_invalid_extension_txt(self):
+        """Test validation fails for TXT extension."""
+        file = MockUploadFile("test.txt", b"content", "text/plain")
         with pytest.raises(ValidationError) as exc_info:
             await validate_image_file(file)
         assert exc_info.value.error_code == "INVALID_FILE_TYPE"
 
     @pytest.mark.asyncio
     async def test_invalid_mime_type(self):
-        """Test validation fails for wrong MIME type."""
+        """Test validation fails for non-image MIME type."""
         content = create_valid_jpeg()
-        file = MockUploadFile("test.jpg", content, "image/png")
+        file = MockUploadFile("test.jpg", content, "text/plain")
         with pytest.raises(ValidationError) as exc_info:
             await validate_image_file(file)
         assert exc_info.value.error_code == "INVALID_FILE_TYPE"
