@@ -6,7 +6,7 @@ batch processing, and cache management.
 
 from typing import List
 
-from fastapi import APIRouter, File, UploadFile, Query, Request
+from fastapi import APIRouter, File, UploadFile, Query, Request, Depends
 from fastapi.responses import JSONResponse
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -15,6 +15,7 @@ from ..core.config import settings
 from ..core.constants import ErrorCodes
 from ..core.exceptions import OCRAPIException, FileValidationError
 from ..core.logging import get_logger
+from ..core.security import verify_api_key
 from ..models.responses import (
     OCRResponse,
     BatchOCRResponse,
@@ -31,7 +32,7 @@ from ..utils.cache_manager import ocr_cache
 
 logger = get_logger(__name__)
 
-router = APIRouter(tags=["OCR"])
+router = APIRouter(tags=["OCR"], dependencies=[Depends(verify_api_key)])
 
 # Rate limiter instance
 limiter = Limiter(key_func=get_remote_address)

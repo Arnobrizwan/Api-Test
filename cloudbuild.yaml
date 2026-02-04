@@ -51,7 +51,7 @@ steps:
       - '--max-instances'
       - '10'
       - '--set-env-vars'
-      - 'CACHE_TYPE=redis,REDIS_HOST=casual-muskrat-63424.upstash.io,REDIS_PORT=6379'
+      - 'CACHE_TYPE=redis,REDIS_HOST=casual-muskrat-63424.upstash.io,REDIS_PORT=6379,API_KEY=REPLACE_WITH_YOUR_API_KEY'
       # Note: Set REDIS_PASSWORD directly in Cloud Run Console or via Secret Manager for security.
       # - '--vpc-connector'
       # - 'projects/$PROJECT_ID/locations/us-central1/connectors/YOUR_CONNECTOR'

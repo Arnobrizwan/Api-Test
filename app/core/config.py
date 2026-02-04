@@ -60,6 +60,7 @@ class Settings(BaseSettings):
     redis_password: Optional[str] = Field(default=None)
 
     # Security
+    api_key: Optional[str] = Field(default=None)  # API Key for authentication
     allowed_hosts: str = Field(default="*")
     cors_origins: str = Field(default="*")
 

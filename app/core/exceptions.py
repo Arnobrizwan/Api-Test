@@ -35,16 +35,24 @@ class OCRAPIException(Exception):
     def to_dict(self) -> Dict[str, Any]:
         """Convert exception to dictionary for JSON response.
 
+        Internal details are hidden in production unless debug is enabled.
+
         Returns:
             Dictionary representation of the error
         """
+        from .config import settings
+
         result = {
             "success": False,
             "error": self.message,
             "error_code": self.error_code.value if isinstance(self.error_code, ErrorCodes) else self.error_code,
         }
-        if self.details:
+        
+        # Only include details in non-production or if they are public safe
+        # (e.g. filename validation errors are safe, stack traces are not)
+        if self.details and (settings.debug or self.__class__.__name__ == "FileValidationError"):
             result["details"] = self.details
+            
         return result
 
 

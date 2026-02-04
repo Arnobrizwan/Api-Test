@@ -140,6 +140,30 @@ def generate_request_id() -> str:
     return secrets.token_hex(16)
 
 
+from fastapi import Security, HTTPException, status
+from fastapi.security.api_key import APIKeyHeader
+from .config import settings
+
+API_KEY_NAME = "X-API-Key"
+api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
+
+async def verify_api_key(api_key: str = Security(api_key_header)):
+    """Verify the provided API key against the configured key.
+    
+    If no API_KEY is configured in settings, authentication is skipped.
+    """
+    if not settings.api_key:
+        return None
+        
+    if api_key == settings.api_key:
+        return api_key
+        
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Invalid or missing API Key",
+    )
+
+
 @lru_cache(maxsize=1)
 def get_security_headers() -> dict:
     """Get security headers for API responses.
