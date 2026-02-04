@@ -56,7 +56,7 @@ class RedisCache(CacheInterface):
                 password=password, 
                 decode_responses=True,
                 ssl=True,
-                ssl_cert_reqs=None
+                ssl_cert_reqs="required"
             )
             self.redis.ping()
             self.ttl = ttl
