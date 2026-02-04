@@ -167,10 +167,15 @@ async def log_requests(request: Request, call_next: Callable) -> Response:
 
 
 # CORS middleware
+# Security Fix: Credentials cannot be allowed with wildcard origins ("*")
+# We set allow_credentials based on whether a specific origin is provided.
+origins = settings.cors_origins.split(",")
+allow_all_origins = "*" in origins
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins.split(","),
-    allow_credentials=True,
+    allow_origins=origins,
+    allow_credentials=not allow_all_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
