@@ -133,3 +133,16 @@ REDIS_SCAN_COUNT = 100  # Number of keys to scan per iteration when clearing cac
 # Static file cache control (in seconds)
 STATIC_FILE_CACHE_MAX_AGE = 3600  # 1 hour for static files
 STATIC_FILE_IMMUTABLE_MAX_AGE = 31536000  # 1 year for versioned/hashed assets
+
+# Security scan constants
+SUSPICIOUS_CONTENT_SCAN_BYTES = 1024  # Only check first 1KB for performance
+
+# File upload constants
+FILE_READ_TIMEOUT_SECONDS = 30.0  # Timeout for reading uploaded files
+MULTIPART_OVERHEAD_FACTOR = 2  # Multiplier for max_file_size to account for multipart overhead
+
+# Cache key validation
+CACHE_KEY_LENGTH = 64  # SHA256 hex string length
+
+# Health check caching
+HEALTH_CHECK_CACHE_TTL_SECONDS = 5  # Cache health check results for 5 seconds

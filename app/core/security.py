@@ -9,7 +9,12 @@ import hashlib
 import secrets
 from typing import Optional, Tuple
 from functools import lru_cache
-import hmac
+
+from fastapi import Security, HTTPException, status
+from fastapi.security.api_key import APIKeyHeader
+
+from .config import settings
+from .constants import SUSPICIOUS_CONTENT_SCAN_BYTES
 
 # Patterns for detecting potentially malicious content
 SUSPICIOUS_PATTERNS = [
@@ -84,8 +89,7 @@ def check_for_suspicious_content(content: bytes) -> bool:
     Returns:
         True if suspicious content is detected
     """
-    # Only check first 1KB for performance
-    check_content = content[:1024].lower()
+    check_content = content[:SUSPICIOUS_CONTENT_SCAN_BYTES].lower()
 
     for pattern in SUSPICIOUS_PATTERNS:
         if pattern.lower() in check_content:
@@ -153,10 +157,6 @@ def generate_request_id() -> str:
     """
     return secrets.token_hex(16)
 
-
-from fastapi import Security, HTTPException, status
-from fastapi.security.api_key import APIKeyHeader
-from .config import settings
 
 API_KEY_NAME = "X-API-Key"
 api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)

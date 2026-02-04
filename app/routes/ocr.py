@@ -5,13 +5,11 @@ batch processing, and cache management.
 """
 
 from typing import List, Union
+import re
 
 from fastapi import APIRouter, File, UploadFile, Query, Request, Depends
 from fastapi.responses import JSONResponse
-from slowapi import Limiter
-from slowapi.util import get_remote_address
 
-from ..core.config import settings
 from ..core.constants import ErrorCodes
 from ..core.exceptions import OCRAPIException, FileValidationError
 from ..core.logging import get_logger
@@ -28,14 +26,14 @@ from ..utils.validators import (
     validate_multiple_images,
     compute_image_hash,
 )
-from ..utils.cache_manager import ocr_cache
+from ..utils.cache_manager import get_cache
 
 logger = get_logger(__name__)
 
 router = APIRouter(tags=["OCR"], dependencies=[Depends(verify_api_key)])
 
-# Rate limiter instance
-limiter = Limiter(key_func=get_remote_address)
+# Cache key validation pattern (SHA256 hex string)
+CACHE_KEY_PATTERN = re.compile(r'^[a-f0-9]{64}$')
 
 
 @router.post(
@@ -80,7 +78,6 @@ Upload an image to extract text using OCR.
 - Result caching for identical images
     """,
 )
-@limiter.limit(settings.rate_limit)
 async def extract_text(
     request: Request,
     image: UploadFile = File(
@@ -192,7 +189,6 @@ Upload multiple images for batch OCR processing.
 requests to improve performance. Enable them explicitly if needed.
     """,
 )
-@limiter.limit(settings.rate_limit_batch)
 async def extract_text_batch(
     request: Request,
     images: List[UploadFile] = File(
@@ -287,7 +283,8 @@ async def get_cache_stats() -> CacheStatsResponse:
     Returns:
         CacheStatsResponse with current cache metrics
     """
-    stats = ocr_cache.get_stats()
+    cache = get_cache()
+    stats = cache.get_stats() if cache else {"type": "uninitialized", "status": "not_ready"}
     logger.debug(f"Cache stats requested: {stats}")
     return CacheStatsResponse(**stats)
 
@@ -324,7 +321,9 @@ async def clear_cache():
     Returns:
         Success message with confirmation
     """
-    ocr_cache.clear()
+    cache = get_cache()
+    if cache:
+        cache.clear()
     logger.warning("Cache cleared by API request - all cached results deleted")
     return {
         "success": True,

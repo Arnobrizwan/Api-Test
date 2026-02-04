@@ -62,6 +62,11 @@ class Settings(BaseSettings):
     redis_db: int = Field(default=0)
     redis_password: Optional[str] = Field(default=None)
     redis_ssl: bool = Field(default=False)  # Enable SSL for Redis (required for cloud Redis)
+    redis_required: bool = Field(default=False)  # If True, app fails fast when Redis is unavailable
+    
+    # Upstash Redis REST API (alternative connection method)
+    upstash_redis_rest_url: Optional[str] = Field(default=None)
+    upstash_redis_rest_token: Optional[str] = Field(default=None)
 
     # Security
     api_key: Optional[str] = Field(default=None)  # API Key for authentication

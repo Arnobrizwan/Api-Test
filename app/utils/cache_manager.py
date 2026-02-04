@@ -1,16 +1,34 @@
 """Cache manager for selecting between in-memory and Redis cache."""
 
 import json
+import re
 from typing import Any, Optional
 
 from cachetools import TTLCache
 import redis
 
 from ..core.config import settings
-from ..core.constants import CACHE_NAMESPACE, REDIS_SCAN_COUNT
+from ..core.constants import CACHE_NAMESPACE, REDIS_SCAN_COUNT, CACHE_KEY_LENGTH
 from ..core.logging import get_logger
 
 logger = get_logger(__name__)
+
+# Cache key validation pattern (SHA256 hex string)
+CACHE_KEY_PATTERN = re.compile(r'^[a-f0-9]{' + str(CACHE_KEY_LENGTH) + '}$')
+
+
+def validate_cache_key(key: str) -> bool:
+    """Validate cache key format (must be SHA256 hex string).
+    
+    Args:
+        key: Cache key to validate
+        
+    Returns:
+        True if key is valid
+    """
+    if not key:
+        return False
+    return bool(CACHE_KEY_PATTERN.match(key))
 
 class CacheInterface:
     def get(self, key: str) -> Any:
@@ -35,9 +53,15 @@ class InMemoryCache(CacheInterface):
         return f"{self.namespace}{key}"
 
     def get(self, key: str) -> Any:
+        if not validate_cache_key(key):
+            logger.warning(f"Invalid cache key format: {key[:16]}...")
+            return None
         return self.cache.get(self._make_key(key))
 
     def set(self, key: str, value: Any):
+        if not validate_cache_key(key):
+            logger.warning(f"Invalid cache key format: {key[:16]}...")
+            return
         self.cache[self._make_key(key)] = value
 
     def get_stats(self) -> dict:
@@ -84,7 +108,10 @@ class RedisCache(CacheInterface):
             logger.info(f"Redis cache connected successfully to {self._host}:{self._port}")
             return True
         except redis.exceptions.ConnectionError as e:
-            logger.error(f"Redis connection failed: {e}. Caching will be disabled.")
+            if settings.redis_required:
+                logger.critical(f"Redis connection failed and REDIS_REQUIRED is set: {e}")
+                raise RuntimeError(f"Redis connection failed: {e}") from e
+            logger.error(f"Redis connection failed: {e}. Caching will use in-memory fallback.")
             self.redis = None
             return False
 
@@ -105,6 +132,9 @@ class RedisCache(CacheInterface):
         return f"{self.namespace}{key}"
 
     def get(self, key: str) -> Any:
+        if not validate_cache_key(key):
+            logger.warning(f"Invalid cache key format: {key[:16]}...")
+            return None
         if not self._ensure_connected():
             return None
         try:
@@ -125,6 +155,9 @@ class RedisCache(CacheInterface):
             return None
 
     def set(self, key: str, value: Any):
+        if not validate_cache_key(key):
+            logger.warning(f"Invalid cache key format: {key[:16]}...")
+            return
         if not self._ensure_connected():
             return
         try:
@@ -176,8 +209,13 @@ class RedisCache(CacheInterface):
 
 
 def get_cache() -> CacheInterface:
+    """Get cache instance based on configuration.
+    
+    Creates a new cache instance each time - use this function
+    instead of module-level globals for proper lifespan management.
+    """
     if settings.cache_type == "redis" and settings.enable_cache:
-        return RedisCache(
+        redis_cache = RedisCache(
             host=settings.redis_host,
             port=settings.redis_port,
             db=settings.redis_db,
@@ -185,9 +223,10 @@ def get_cache() -> CacheInterface:
             password=settings.redis_password,
             use_ssl=settings.redis_ssl,
         )
+        # If Redis failed but is required, let it fail
+        # Otherwise return it (even if disconnected, it will fallback)
+        return redis_cache
     return InMemoryCache(
         maxsize=settings.cache_max_size,
         ttl=settings.cache_ttl_seconds
     )
-
-ocr_cache = get_cache()

@@ -17,6 +17,7 @@ from ..core.constants import (
     ALLOWED_MIME_TYPES,
     ErrorCodes,
     MIN_IMAGE_SIZE_BYTES,
+    FILE_READ_TIMEOUT_SECONDS,
 )
 from ..core.exceptions import FileValidationError
 from ..core.security import (
@@ -101,7 +102,7 @@ async def validate_image_file(file: UploadFile) -> Tuple[bytes, Image.Image]:
 
     # Read file content with timeout to prevent Slowloris attacks
     try:
-        content = await asyncio.wait_for(file.read(), timeout=30.0)
+        content = await asyncio.wait_for(file.read(), timeout=FILE_READ_TIMEOUT_SECONDS)
     except asyncio.TimeoutError:
         logger.warning(f"Validation failed: File read timeout for '{safe_filename}'")
         raise FileValidationError(
@@ -156,21 +157,11 @@ async def validate_image_file(file: UploadFile) -> Tuple[bytes, Image.Image]:
             filename=safe_filename
         )
 
-    # Validate image integrity with PIL
-    # Using context managers to prevent memory leaks
+    # Validate image integrity with PIL - open once, verify, and use
     try:
-        # First pass: verify image integrity
-        verify_buffer = io.BytesIO(content)
-        try:
-            with Image.open(verify_buffer) as verify_image:
-                verify_image.verify()
-        finally:
-            verify_buffer.close()
-
-        # Second pass: open for actual use (verify() invalidates the image)
         image_buffer = io.BytesIO(content)
         image = Image.open(image_buffer)
-        # Load image data into memory so we can close the buffer
+        # Verify by loading the image data
         image.load()
     except Exception as e:
         logger.warning(f"Validation failed: Image integrity check failed - {e}")

@@ -28,7 +28,7 @@ from ..models.responses import (
     ImageMetadata,
     QualityAssessment,
 )
-from ..utils.cache_manager import ocr_cache
+from ..utils.cache_manager import get_cache
 from ..utils.text_processing import (
     cleanup_text,
     format_as_paragraphs,
@@ -281,7 +281,8 @@ class OCRService:
 
         # Check cache first
         if self.enable_cache and cache_key:
-            cached_result = ocr_cache.get(cache_key)
+            cache = get_cache()
+            cached_result = cache.get(cache_key) if cache else None
             if cached_result:
                 processing_time_ms = int((time.perf_counter() - start_time) * 1000)
                 cached_result["cached"] = True
@@ -328,20 +329,22 @@ class OCRService:
 
         # Cache result
         if self.enable_cache and cache_key:
-            # Deep copy and convert Pydantic models to dicts for JSON serialization
-            cache_data = {
-                "success": result["success"],
-                "text": result["text"],
-                "text_formatted": result["text_formatted"],
-                "confidence": result["confidence"],
-                "ocr_engine": result["ocr_engine"],
-                "text_stats": result["text_stats"].model_dump() if result["text_stats"] else None,
-                "entities": result["entities"].model_dump() if result["entities"] else None,
-                "image_metadata": result["image_metadata"].model_dump() if result["image_metadata"] else None,
-                "quality_assessment": result["quality_assessment"].model_dump() if result["quality_assessment"] else None,
-            }
-            ocr_cache.set(cache_key, cache_data)
-            logger.debug(f"Cached result for key: {cache_key[:16]}...")
+            cache = get_cache()
+            if cache:
+                # Deep copy and convert Pydantic models to dicts for JSON serialization
+                cache_data = {
+                    "success": result["success"],
+                    "text": result["text"],
+                    "text_formatted": result["text_formatted"],
+                    "confidence": result["confidence"],
+                    "ocr_engine": result["ocr_engine"],
+                    "text_stats": result["text_stats"].model_dump() if result["text_stats"] else None,
+                    "entities": result["entities"].model_dump() if result["entities"] else None,
+                    "image_metadata": result["image_metadata"].model_dump() if result["image_metadata"] else None,
+                    "quality_assessment": result["quality_assessment"].model_dump() if result["quality_assessment"] else None,
+                }
+                cache.set(cache_key, cache_data)
+                logger.debug(f"Cached result for key: {cache_key[:16]}...")
 
         logger.info(
             f"OCR completed: engine={engine_used.value if engine_used else 'none'}",

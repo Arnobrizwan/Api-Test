@@ -4,7 +4,6 @@ This module configures and creates the FastAPI application with all
 middleware, exception handlers, and routes properly configured.
 """
 
-import os
 import time
 from contextlib import asynccontextmanager
 from typing import Callable
@@ -13,13 +12,12 @@ from fastapi import FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from fastapi.staticfiles import StaticFiles
-from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi import Limiter
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
 from .core.config import settings
-from .core.constants import ErrorCodes
+from .core.constants import ErrorCodes, MULTIPART_OVERHEAD_FACTOR, HEALTH_CHECK_CACHE_TTL_SECONDS
 from .core.exceptions import OCRAPIException
 from .core.logging import setup_logging, get_logger
 from .core.security import get_security_headers, generate_request_id
@@ -30,8 +28,11 @@ from .routes import ocr_router
 setup_logging(level=settings.log_level, json_format=not settings.debug)
 logger = get_logger(__name__)
 
-# Rate limiter
+# Rate limiter - single shared instance
 limiter = Limiter(key_func=get_remote_address)
+
+# Global cache instance (initialized in lifespan)
+ocr_cache = None
 
 
 @asynccontextmanager
@@ -41,6 +42,8 @@ async def lifespan(app: FastAPI):
     Args:
         app: FastAPI application instance
     """
+    global ocr_cache
+    
     # Startup
     logger.info(
         f"Starting {settings.app_name} v{settings.app_version}",
@@ -51,6 +54,11 @@ async def lifespan(app: FastAPI):
         }
     )
     logger.info(f"Rate limits: single={settings.rate_limit}, batch={settings.rate_limit_batch}")
+    
+    # Initialize cache in lifespan (not at module level)
+    from .utils.cache_manager import get_cache
+    ocr_cache = get_cache()
+    logger.info(f"Cache initialized: {ocr_cache.get_stats().get('type', 'unknown')}")
 
     yield
 
@@ -90,7 +98,20 @@ All errors return a consistent JSON structure with `success`, `error`, and `erro
 
 # Configure rate limiter
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# Custom rate limit exceeded handler
+async def rate_limit_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Handle rate limit exceeded with custom response format."""
+    return JSONResponse(
+        status_code=429,
+        content={
+            "success": False,
+            "error": "Rate limit exceeded. Please try again later.",
+            "error_code": "RATE_LIMIT_EXCEEDED",
+        },
+    )
+
+app.add_exception_handler(RateLimitExceeded, rate_limit_handler)
 
 
 # Security headers middleware
@@ -140,8 +161,8 @@ async def check_content_length(request: Request, call_next: Callable) -> Respons
     content_length = request.headers.get("content-length")
     if content_length:
         try:
-            # Allow some overhead for multipart form data (2x max file size)
-            max_allowed = settings.max_file_size * 2
+            # Allow overhead for multipart form data
+            max_allowed = settings.max_file_size * MULTIPART_OVERHEAD_FACTOR
             if int(content_length) > max_allowed:
                 logger.warning(
                     f"Request rejected: Content-Length {content_length} exceeds limit {max_allowed}"
@@ -355,10 +376,10 @@ async def root():
             "Security scanning",
         ],
         "endpoints": {
-            "extract_text": "POST /extract-text",
-            "batch_extract": "POST /extract-text/batch",
-            "cache_stats": "GET /cache/stats",
-            "clear_cache": "DELETE /cache",
+            "extract_text": "POST /v1/extract-text",
+            "batch_extract": "POST /v1/extract-text/batch",
+            "cache_stats": "GET /v1/cache/stats",
+            "clear_cache": "DELETE /v1/cache",
             "health": "GET /health",
             "docs": "GET /docs",
         },
@@ -371,7 +392,9 @@ async def root():
     }
 
 
-# Health check endpoint
+# Health check endpoint - cached results to prevent performance issues
+_health_check_cache = {"timestamp": 0, "result": None}
+
 @app.get(
     "/health",
     response_model=HealthResponse,
@@ -393,10 +416,18 @@ async def health_check():
     - OCR engines (Vision API and/or Tesseract)
     - Cache (Redis or in-memory)
     """
+    import time
     from .services.vision_api import vision_service
     from .services.tesseract import tesseract_service
-    from .utils.cache_manager import ocr_cache
-
+    
+    global _health_check_cache, ocr_cache
+    
+    current_time = time.time()
+    
+    # Return cached result if still valid
+    if current_time - _health_check_cache["timestamp"] < HEALTH_CHECK_CACHE_TTL_SECONDS:
+        return _health_check_cache["result"]
+    
     dependencies = {}
     overall_status = "healthy"
 
@@ -416,7 +447,7 @@ async def health_check():
     )
 
     # Check cache
-    cache_stats = ocr_cache.get_stats()
+    cache_stats = ocr_cache.get_stats() if ocr_cache else {"type": "unknown", "status": "uninitialized"}
     cache_available = cache_stats.get("status") != "error" and cache_stats.get("status") != "disconnected"
     if cache_stats.get("type") == "in-memory":
         cache_available = True  # In-memory cache is always available
@@ -434,56 +465,17 @@ async def health_check():
     elif not cache_available:
         overall_status = "degraded"
 
-    return HealthResponse(
+    result = HealthResponse(
         status=overall_status,
         version=settings.app_version,
         dependencies=dependencies
     )
+    
+    # Cache the result
+    _health_check_cache = {"timestamp": current_time, "result": result}
+    
+    return result
 
 
 # Include OCR routes with v1 versioning (primary)
 app.include_router(ocr_router, prefix="/v1")
-
-
-# Static file cache headers middleware
-@app.middleware("http")
-async def add_static_cache_headers(request: Request, call_next: Callable) -> Response:
-    """Add cache control headers for static files.
-
-    Args:
-        request: Incoming request
-        call_next: Next middleware/handler
-
-    Returns:
-        Response with cache headers for static content
-    """
-    response = await call_next(request)
-
-    # Add cache headers for static files served from /web
-    if request.url.path.startswith("/web"):
-        # Get file extension
-        path = request.url.path.lower()
-
-        # Immutable assets (versioned/hashed files, fonts)
-        if any(path.endswith(ext) for ext in (".woff", ".woff2", ".ttf", ".eot")):
-            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
-        # CSS/JS - moderate caching
-        elif any(path.endswith(ext) for ext in (".css", ".js")):
-            response.headers["Cache-Control"] = "public, max-age=3600, must-revalidate"
-        # Images - longer caching
-        elif any(path.endswith(ext) for ext in (".png", ".jpg", ".jpeg", ".gif", ".ico", ".svg", ".webp")):
-            response.headers["Cache-Control"] = "public, max-age=86400, must-revalidate"
-        # HTML - short caching
-        elif path.endswith(".html") or path == "/web" or path == "/web/":
-            response.headers["Cache-Control"] = "public, max-age=300, must-revalidate"
-
-    return response
-
-
-# Serve frontend static files
-current_dir = os.path.dirname(os.path.abspath(__file__))
-project_root = os.path.dirname(current_dir)
-frontend_path = os.path.join(project_root, "frontend")
-
-if os.path.exists(frontend_path):
-    app.mount("/web", StaticFiles(directory=frontend_path, html=True), name="frontend")
