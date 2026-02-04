@@ -49,6 +49,40 @@
             overflow: hidden;
         }
 
+        .api-config-bar {
+            background: #f1f3f9;
+            padding: 15px 30px;
+            border-bottom: 1px solid #e2e8f0;
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+
+        .api-key-input-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex: 1;
+            min-width: 300px;
+        }
+
+        .api-key-input-group label {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #4a5568;
+            white-space: nowrap;
+        }
+
+        .api-key-input-group input {
+            flex: 1;
+            padding: 8px 12px;
+            border: 1px solid #cbd5e0;
+            border-radius: 6px;
+            font-family: monospace;
+            font-size: 0.9rem;
+        }
+
         .tabs {
             display: flex;
             background: #f8f9fa;
@@ -582,9 +616,15 @@
         </header>
 
         <div class="main-card">
-            <div class="api-status" id="apiStatus">
-                <span class="status-dot"></span>
-                <span>Checking API status...</span>
+            <div class="api-config-bar">
+                <div class="api-key-input-group">
+                    <label for="apiKeyInput"><i class="fas fa-key"></i> API Key:</label>
+                    <input type="password" id="apiKeyInput" placeholder="Enter your X-API-Key here...">
+                </div>
+                <div class="api-status" id="apiStatus" style="margin-bottom: 0;">
+                    <span class="status-dot"></span>
+                    <span>Checking API status...</span>
+                </div>
             </div>
 
             <div class="tabs">
@@ -721,15 +761,40 @@
     </div>
 
     <script>
-        const API_BASE = 'https://ocr-service-243539984009.us-central1.run.app';
+        const API_BASE = window.location.origin; // Dynamically use the current host
         let singleFile = null;
         let batchFiles = [];
+
+        // API Key handling
+        const apiKeyInput = document.getElementById('apiKeyInput');
+        
+        // Load API Key from localStorage
+        const storedKey = localStorage.getItem('ocr_api_key');
+        if (storedKey) {
+            apiKeyInput.value = storedKey;
+        }
+
+        // Save API Key when changed
+        apiKeyInput.addEventListener('input', (e) => {
+            localStorage.setItem('ocr_api_key', e.target.value);
+        });
+
+        function getHeaders() {
+            const headers = {};
+            const key = apiKeyInput.value.trim();
+            if (key) {
+                headers['X-API-Key'] = key;
+            }
+            return headers;
+        }
 
         // Check API status on load
         async function checkApiStatus() {
             const statusEl = document.getElementById('apiStatus');
             try {
-                const res = await fetch(`${API_BASE}/health`);
+                const res = await fetch(`${API_BASE}/health`, {
+                    headers: getHeaders()
+                });
                 const data = await res.json();
                 statusEl.innerHTML = `
                     <span class="status-dot"></span>
@@ -739,12 +804,15 @@
             } catch (e) {
                 statusEl.innerHTML = `
                     <span class="status-dot"></span>
-                    <span>API Offline - Please check connection</span>
+                    <span>API Connection Issues</span>
                 `;
                 statusEl.classList.add('error');
             }
         }
+        
+        // Initial check and re-check when key changes
         checkApiStatus();
+        apiKeyInput.addEventListener('change', checkApiStatus);
 
         // Tab switching
         document.querySelectorAll('.tab').forEach(tab => {
@@ -818,8 +886,12 @@
 
             try {
                 const res = await fetch(
-                    `${API_BASE}/extract-text?include_metadata=${includeMetadata}&include_entities=${includeEntities}&use_cache=${useCache}`,
-                    { method: 'POST', body: formData }
+                    `${API_BASE}/v1/extract-text?include_metadata=${includeMetadata}&include_entities=${includeEntities}&use_cache=${useCache}`,
+                    { 
+                        method: 'POST', 
+                        body: formData,
+                        headers: getHeaders()
+                    }
                 );
                 const data = await res.json();
                 hideLoading();
@@ -827,7 +899,7 @@
                 if (data.success) {
                     displayResults(data);
                 } else {
-                    alert(`Error: ${data.error}`);
+                    alert(`Error: ${data.error || 'Unauthorized or processing failed'}`);
                 }
             } catch (e) {
                 hideLoading();
@@ -1066,9 +1138,10 @@
             showLoading(`Processing ${batchFiles.length} images...`);
 
             try {
-                const res = await fetch(`${API_BASE}/extract-text/batch`, {
+                const res = await fetch(`${API_BASE}/v1/extract-text/batch`, {
                     method: 'POST',
-                    body: formData
+                    body: formData,
+                    headers: getHeaders()
                 });
                 const data = await res.json();
                 hideLoading();
@@ -1108,29 +1181,31 @@
                 </div>
             `;
 
-            data.results.forEach((result, index) => {
-                html += `
-                    <div class="result-card">
-                        <h4>
-                            <span><i class="fas fa-file-image"></i> ${result.filename}</span>
-                            <span class="badge ${result.success ? 'badge-success' : 'badge-warning'}">
-                                ${result.success ? 'Success' : 'Failed'}
-                            </span>
-                        </h4>
-                        ${result.success ? `
-                            <div class="extracted-text" style="max-height:150px;">${result.text || '(No text found)'}</div>
-                            <div style="margin-top:10px;font-size:0.85rem;color:#6c757d;">
-                                Confidence: ${(result.confidence * 100).toFixed(1)}% •
-                                Engine: ${result.ocr_engine} •
-                                Time: ${result.processing_time_ms}ms
-                                ${result.cached ? '• Cached' : ''}
-                            </div>
-                        ` : `
-                            <div style="color:#dc3545;">${result.error}</div>
-                        `}
-                    </div>
-                `;
-            });
+            if (data.results) {
+                data.results.forEach((result, index) => {
+                    html += `
+                        <div class="result-card">
+                            <h4>
+                                <span><i class="fas fa-file-image"></i> ${result.filename}</span>
+                                <span class="badge ${result.success ? 'badge-success' : 'badge-warning'}">
+                                    ${result.success ? 'Success' : 'Failed'}
+                                </span>
+                            </h4>
+                            ${result.success ? `
+                                <div class="extracted-text" style="max-height:150px;">${result.text || '(No text found)'}</div>
+                                <div style="margin-top:10px;font-size:0.85rem;color:#6c757d;">
+                                    Confidence: ${(result.confidence * 100).toFixed(1)}% •
+                                    Engine: ${result.ocr_engine} •
+                                    Time: ${result.processing_time_ms}ms
+                                    ${result.cached ? '• Cached' : ''}
+                                </div>
+                            ` : `
+                                <div style="color:#dc3545;">${result.error}</div>
+                            `}
+                        </div>
+                    `;
+                });
+            }
 
             container.innerHTML = html;
         }
